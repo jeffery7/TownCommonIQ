@@ -14,7 +14,7 @@ This code will also have the ability to generate missing minutes documents for m
 
 This code was primarily created to conduct oversight on the Town of Hardwick Massachusetts Select Board and administrative staff, it should be flexibile enough to be adapted to other towns in the future.
 
-Meetings are pulled from [MyTownGovernment.org](https://www.mytowngovernment.org/board?board=ahNzfnRvd25nb3Zlcm5tZW50LWhychILEgpCb2FyZE1vZGVsGNn3FAw) and correlated with recordings on the [Hardwick TV YouTube channel](https://www.youtube.com/@hardwicktv2394/streams). Transcripts are used together with meeting agendas to generate MGL Chapter 30A §22 compliant draft minutes as `.docx` files.
+Meetings are pulled from [MyTownGovernment.org](https://www.mytowngovernment.org/board?board=ahNzfnRvd25nb3Zlcm5tZW50LWhychILEgpCb2FyZE1vZGVsGNn3FAw) and correlated with recordings on the [Hardwick TV YouTube channel](https://www.youtube.com/@hardwicktv2394/streams). Transcripts are used together with meeting agendas to generate [MGL Chapter 30A §22](https://malegislature.gov/Laws/GeneralLaws/PartI/TitleIII/Chapter30A/Section22) compliant draft minutes as `.docx` files.
 
 ## Setup
 
