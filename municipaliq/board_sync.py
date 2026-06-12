@@ -19,8 +19,8 @@ from typing import Optional
 
 from openai import OpenAI
 
-from open_meeting import data_store
-from open_meeting.minutes_generator import OLLAMA_HOST, _MODEL, _strip_thinking
+from municipaliq import data_store
+from municipaliq.minutes_generator import OLLAMA_HOST, _MODEL, _strip_thinking
 
 _REORG_RE = re.compile(r'reorgani[sz]', re.IGNORECASE)
 

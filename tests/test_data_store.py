@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from open_meeting import data_store
+from municipaliq import data_store
 
 
 @pytest.fixture(autouse=True)

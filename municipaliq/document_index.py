@@ -21,7 +21,7 @@ metadata records an authoritative 'type' field for each downloaded document.
 import json
 from pathlib import Path
 
-from open_meeting import data_store
+from municipaliq import data_store
 
 _INDEX_JSON = data_store.DATA_DIR / 'index.json'
 _DOC_SUFFIXES = frozenset(('.pdf', '.docx', '.doc'))

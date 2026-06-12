@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from open_meeting import cli, data_store, document_index
+from municipaliq import cli, data_store, document_index
 
 
 MEETINGS = [
@@ -56,7 +56,7 @@ class TestFetchDocText:
         mock_page = MagicMock()
         mock_page.extract_text.return_value = 'page text'
         with patch('requests.get', return_value=mock_resp), \
-             patch('open_meeting.cli.PdfReader') as mock_reader_class:
+             patch('municipaliq.cli.PdfReader') as mock_reader_class:
             mock_reader_class.return_value.pages = [mock_page]
             result = cli._fetch_doc_text('http://example.com/doc.pdf')
         assert result == 'page text'
@@ -79,9 +79,9 @@ class TestFetchDocText:
 class TestCmdSync:
     def test_sync_saves_meetings_and_videos(self):
         board_info = {'chair': 'Eric Vollheim', 'members': ['Eric W. Vollheim']}
-        with patch('open_meeting.scraper.mytowngovernment.fetch_meetings', return_value=(MEETINGS, board_info)), \
-             patch('open_meeting.scraper.youtube.fetch_streams', return_value=VIDEOS), \
-             patch('open_meeting.correlator.correlate', return_value=MEETINGS):
+        with patch('municipaliq.scraper.mytowngovernment.fetch_meetings', return_value=(MEETINGS, board_info)), \
+             patch('municipaliq.scraper.youtube.fetch_streams', return_value=VIDEOS), \
+             patch('municipaliq.correlator.correlate', return_value=MEETINGS):
             args = MagicMock()
             result = cli._cmd_sync(args)
         assert result == 0
@@ -91,10 +91,10 @@ class TestCmdSync:
     def test_sync_adds_meeting_from_unmatched_video(self):
         unmatched_video = {'video_id': 'zzz999', 'date': '2024-06-01', 'title': 'June meeting', 'url': 'https://yt.be/zzz999'}
         board_info = {'chair': None, 'members': []}
-        with patch('open_meeting.scraper.mytowngovernment.fetch_meetings', return_value=([], board_info)), \
-             patch('open_meeting.scraper.youtube.fetch_streams', return_value=[unmatched_video]), \
-             patch('open_meeting.correlator.correlate', return_value=[]), \
-             patch('open_meeting.scraper.mytowngovernment.fetch_agenda_text', return_value=''):
+        with patch('municipaliq.scraper.mytowngovernment.fetch_meetings', return_value=([], board_info)), \
+             patch('municipaliq.scraper.youtube.fetch_streams', return_value=[unmatched_video]), \
+             patch('municipaliq.correlator.correlate', return_value=[]), \
+             patch('municipaliq.scraper.mytowngovernment.fetch_agenda_text', return_value=''):
             args = MagicMock()
             cli._cmd_sync(args)
         meetings = data_store.load_meetings()
@@ -103,9 +103,9 @@ class TestCmdSync:
     def test_sync_skips_video_with_no_date(self):
         no_date_video = {'video_id': 'zzz000', 'date': None, 'title': 'No date', 'url': 'https://yt.be/zzz000'}
         board_info = {'chair': None, 'members': []}
-        with patch('open_meeting.scraper.mytowngovernment.fetch_meetings', return_value=([], board_info)), \
-             patch('open_meeting.scraper.youtube.fetch_streams', return_value=[no_date_video]), \
-             patch('open_meeting.correlator.correlate', return_value=[]):
+        with patch('municipaliq.scraper.mytowngovernment.fetch_meetings', return_value=([], board_info)), \
+             patch('municipaliq.scraper.youtube.fetch_streams', return_value=[no_date_video]), \
+             patch('municipaliq.correlator.correlate', return_value=[]):
             args = MagicMock()
             cli._cmd_sync(args)
         assert data_store.load_meetings() == []
@@ -115,10 +115,10 @@ class TestCmdSync:
         folder.mkdir(parents=True)
         meeting_no_yt = {**MEETINGS[0], 'folder': str(folder), 'youtube_id': None, 'meeting_url': None}
         board_info = {'chair': None, 'members': []}
-        with patch('open_meeting.scraper.mytowngovernment.fetch_meetings', return_value=([meeting_no_yt], board_info)), \
-             patch('open_meeting.scraper.youtube.fetch_streams', return_value=[]), \
-             patch('open_meeting.correlator.correlate', return_value=[meeting_no_yt]), \
-             patch('open_meeting.scraper.mytowngovernment.fetch_agenda_text') as mock_fetch:
+        with patch('municipaliq.scraper.mytowngovernment.fetch_meetings', return_value=([meeting_no_yt], board_info)), \
+             patch('municipaliq.scraper.youtube.fetch_streams', return_value=[]), \
+             patch('municipaliq.correlator.correlate', return_value=[meeting_no_yt]), \
+             patch('municipaliq.scraper.mytowngovernment.fetch_agenda_text') as mock_fetch:
             args = MagicMock()
             cli._cmd_sync(args)
         mock_fetch.assert_not_called()
@@ -128,10 +128,10 @@ class TestCmdSync:
         folder.mkdir(parents=True)
         meeting_no_url = {**MEETINGS[0], 'folder': str(folder), 'meeting_url': None}
         board_info = {'chair': None, 'members': []}
-        with patch('open_meeting.scraper.mytowngovernment.fetch_meetings', return_value=([meeting_no_url], board_info)), \
-             patch('open_meeting.scraper.youtube.fetch_streams', return_value=[]), \
-             patch('open_meeting.correlator.correlate', return_value=[meeting_no_url]), \
-             patch('open_meeting.scraper.mytowngovernment.fetch_agenda_text') as mock_fetch:
+        with patch('municipaliq.scraper.mytowngovernment.fetch_meetings', return_value=([meeting_no_url], board_info)), \
+             patch('municipaliq.scraper.youtube.fetch_streams', return_value=[]), \
+             patch('municipaliq.correlator.correlate', return_value=[meeting_no_url]), \
+             patch('municipaliq.scraper.mytowngovernment.fetch_agenda_text') as mock_fetch:
             args = MagicMock()
             cli._cmd_sync(args)
         mock_fetch.assert_not_called()
@@ -142,10 +142,10 @@ class TestCmdSync:
         (folder / '2024-03-15_1830_agenda.txt').write_text('existing')
         meeting = {**MEETINGS[0], 'folder': str(folder)}
         board_info = {'chair': None, 'members': []}
-        with patch('open_meeting.scraper.mytowngovernment.fetch_meetings', return_value=([meeting], board_info)), \
-             patch('open_meeting.scraper.youtube.fetch_streams', return_value=[]), \
-             patch('open_meeting.correlator.correlate', return_value=[meeting]), \
-             patch('open_meeting.scraper.mytowngovernment.fetch_agenda_text') as mock_fetch:
+        with patch('municipaliq.scraper.mytowngovernment.fetch_meetings', return_value=([meeting], board_info)), \
+             patch('municipaliq.scraper.youtube.fetch_streams', return_value=[]), \
+             patch('municipaliq.correlator.correlate', return_value=[meeting]), \
+             patch('municipaliq.scraper.mytowngovernment.fetch_agenda_text') as mock_fetch:
             args = MagicMock()
             cli._cmd_sync(args)
         mock_fetch.assert_not_called()
@@ -157,10 +157,10 @@ class TestCmdSync:
             {**MEETINGS[0], 'folder': str(folder)},
         ]
         board_info = {'chair': None, 'members': []}
-        with patch('open_meeting.scraper.mytowngovernment.fetch_meetings', return_value=(meetings_with_url, board_info)), \
-             patch('open_meeting.scraper.youtube.fetch_streams', return_value=[]), \
-             patch('open_meeting.correlator.correlate', return_value=meetings_with_url), \
-             patch('open_meeting.scraper.mytowngovernment.fetch_agenda_text', return_value='1. Call to order\n2. Adjournment'):
+        with patch('municipaliq.scraper.mytowngovernment.fetch_meetings', return_value=(meetings_with_url, board_info)), \
+             patch('municipaliq.scraper.youtube.fetch_streams', return_value=[]), \
+             patch('municipaliq.correlator.correlate', return_value=meetings_with_url), \
+             patch('municipaliq.scraper.mytowngovernment.fetch_agenda_text', return_value='1. Call to order\n2. Adjournment'):
             args = MagicMock()
             cli._cmd_sync(args)
         assert (folder / '2024-03-15_1830_agenda.txt').exists()
@@ -179,9 +179,9 @@ class TestCmdSync:
             received_order.extend(m['date'] for m in meetings)
             return meetings
 
-        with patch('open_meeting.scraper.mytowngovernment.fetch_meetings', return_value=(scraped, board_info)), \
-             patch('open_meeting.scraper.youtube.fetch_streams', return_value=[]), \
-             patch('open_meeting.correlator.correlate', side_effect=capture_correlate):
+        with patch('municipaliq.scraper.mytowngovernment.fetch_meetings', return_value=(scraped, board_info)), \
+             patch('municipaliq.scraper.youtube.fetch_streams', return_value=[]), \
+             patch('municipaliq.correlator.correlate', side_effect=capture_correlate):
             args = MagicMock()
             cli._cmd_sync(args)
 
@@ -214,7 +214,7 @@ class TestCmdList:
         assert '2024-04-10' not in out  # already has minutes
 
     def test_list_no_draft_filters(self, capsys, tmp_path):
-        from open_meeting import document_index
+        from municipaliq import document_index
         folder = tmp_path / '2024-03-15_1830'
         folder.mkdir()
         (folder / '2024-03-15_1830_minutes_draft_generated.docx').write_bytes(b'PK')
@@ -233,7 +233,7 @@ class TestCmdList:
         assert '2024-04-10' in out
 
     def test_list_has_transcript_filters(self, capsys, tmp_path):
-        from open_meeting import document_index
+        from municipaliq import document_index
         folder = tmp_path / '2024-03-15_1830'
         folder.mkdir()
         (folder / '2024-03-15_1830_transcript.txt').write_text('text')
@@ -252,7 +252,7 @@ class TestCmdList:
         assert '2024-04-10' not in out  # no transcript
 
     def test_shows_index_status(self, capsys, tmp_path):
-        from open_meeting import document_index
+        from municipaliq import document_index
         folder = tmp_path / '2024-03-15_1830'
         folder.mkdir()
         (folder / '2024-03-15_1830_transcript.txt').write_text('text')
@@ -369,10 +369,10 @@ class TestNotifyNewMinutes:
         fresh_with_minutes = [{**old[0], 'minutes_url': 'http://example.com/m.pdf'}]
         board_info = {'chair': None, 'members': []}
         data_store.save_meetings(old)
-        with patch('open_meeting.scraper.mytowngovernment.fetch_meetings',
+        with patch('municipaliq.scraper.mytowngovernment.fetch_meetings',
                    return_value=(fresh_with_minutes, board_info)), \
-             patch('open_meeting.scraper.youtube.fetch_streams', return_value=[]), \
-             patch('open_meeting.correlator.correlate', return_value=fresh_with_minutes):
+             patch('municipaliq.scraper.youtube.fetch_streams', return_value=[]), \
+             patch('municipaliq.correlator.correlate', return_value=fresh_with_minutes):
             cli._cmd_sync(MagicMock())
         assert 'newly-posted' in capsys.readouterr().out
 
@@ -417,8 +417,8 @@ class TestGenerateOne:
         folder = tmp_path / '2024-03-15_1830'
         folder.mkdir()
         meeting = {**MEETINGS[0], 'folder': str(folder)}
-        with patch('open_meeting.transcript.get_transcript', return_value='text'), \
-             patch('open_meeting.cli.generate_minutes') as mock_gen:
+        with patch('municipaliq.transcript.get_transcript', return_value='text'), \
+             patch('municipaliq.cli.generate_minutes') as mock_gen:
             cli._generate_one(meeting, [meeting])
         assert mock_gen.called
 
@@ -426,9 +426,9 @@ class TestGenerateOne:
         folder = tmp_path / '2024-03-15_1830'
         folder.mkdir()
         meeting = {**MEETINGS[0], 'folder': str(folder)}
-        with patch('open_meeting.transcript.get_transcript', return_value='text'), \
-             patch('open_meeting.cli.generate_minutes'), \
-             patch('open_meeting.scraper.mytowngovernment.fetch_agenda_text', return_value='Agenda content') as mock_fetch:
+        with patch('municipaliq.transcript.get_transcript', return_value='text'), \
+             patch('municipaliq.cli.generate_minutes'), \
+             patch('municipaliq.scraper.mytowngovernment.fetch_agenda_text', return_value='Agenda content') as mock_fetch:
             cli._generate_one(meeting, [meeting])
         mock_fetch.assert_called_once_with(MEETINGS[0]['meeting_url'])
         assert (folder / '2024-03-15_1830_agenda.txt').read_text() == 'Agenda content'
@@ -442,9 +442,9 @@ class TestGenerateOne:
 
         def fake_generate(mtg, agenda_text, transcript_text, output_path, board_info=None):
             captured['agenda_text'] = agenda_text
-        with patch('open_meeting.transcript.get_transcript', return_value='text'), \
-             patch('open_meeting.cli.generate_minutes', side_effect=fake_generate), \
-             patch('open_meeting.scraper.mytowngovernment.fetch_agenda_text') as mock_fetch:
+        with patch('municipaliq.transcript.get_transcript', return_value='text'), \
+             patch('municipaliq.cli.generate_minutes', side_effect=fake_generate), \
+             patch('municipaliq.scraper.mytowngovernment.fetch_agenda_text') as mock_fetch:
             cli._generate_one(meeting, [meeting])
         assert captured['agenda_text'] == 'Cached agenda content'
         mock_fetch.assert_not_called()  # should not fetch when cache exists
@@ -454,8 +454,8 @@ class TestGenerateOne:
         folder.mkdir()
         (folder / 'meeting.ogg').write_bytes(b'audio')
         meeting = {**MEETINGS[0], 'youtube_id': None, 'folder': str(folder)}
-        with patch('open_meeting.transcript.transcribe_audio', return_value='text') as mock_ta, \
-             patch('open_meeting.cli.generate_minutes') as mock_gen:
+        with patch('municipaliq.transcript.transcribe_audio', return_value='text') as mock_ta, \
+             patch('municipaliq.cli.generate_minutes') as mock_gen:
             cli._generate_one(meeting, [meeting])
         mock_ta.assert_called_once()
         mock_gen.assert_called_once()
@@ -465,8 +465,8 @@ class TestGenerateOne:
         folder.mkdir()
         (folder / '2024-03-15_1830_minutes_draft_generated.docx').write_bytes(b'existing')
         meeting = {**MEETINGS[0], 'folder': str(folder)}
-        with patch('open_meeting.transcript.get_transcript') as mock_t, \
-             patch('open_meeting.cli.generate_minutes') as mock_gen:
+        with patch('municipaliq.transcript.get_transcript') as mock_t, \
+             patch('municipaliq.cli.generate_minutes') as mock_gen:
             cli._generate_one(meeting, [meeting])
         assert 'Skipping' in capsys.readouterr().out
         mock_t.assert_not_called()
@@ -477,8 +477,8 @@ class TestGenerateOne:
         folder.mkdir()
         (folder / '2024-03-15_1830_minutes_draft_generated.docx').write_bytes(b'existing')
         meeting = {**MEETINGS[0], 'folder': str(folder)}
-        with patch('open_meeting.transcript.get_transcript', return_value='text'), \
-             patch('open_meeting.cli.generate_minutes') as mock_gen:
+        with patch('municipaliq.transcript.get_transcript', return_value='text'), \
+             patch('municipaliq.cli.generate_minutes') as mock_gen:
             cli._generate_one(meeting, [meeting], force=True)
         mock_gen.assert_called_once()
 
@@ -493,9 +493,9 @@ class TestGenerateOneAgendaUrl:
             'meeting_url': None,
             'agenda_url': 'http://example.com/agenda.pdf',
         }
-        with patch('open_meeting.transcript.get_transcript', return_value='text'), \
-             patch('open_meeting.cli.generate_minutes'), \
-             patch('open_meeting.cli._fetch_doc_text', return_value='Agenda text') as mock_fetch:
+        with patch('municipaliq.transcript.get_transcript', return_value='text'), \
+             patch('municipaliq.cli.generate_minutes'), \
+             patch('municipaliq.cli._fetch_doc_text', return_value='Agenda text') as mock_fetch:
             cli._generate_one(meeting, [meeting])
         mock_fetch.assert_called_once_with('http://example.com/agenda.pdf')
         assert (folder / '2024-03-15_1830_agenda.txt').read_text() == 'Agenda text'
@@ -513,8 +513,8 @@ class TestGenerateOneAgendaUrl:
 
         def fake_generate(mtg, agenda_text, transcript_text, output_path, board_info=None):
             captured['agenda_text'] = agenda_text
-        with patch('open_meeting.transcript.get_transcript', return_value='text'), \
-             patch('open_meeting.cli.generate_minutes', side_effect=fake_generate):
+        with patch('municipaliq.transcript.get_transcript', return_value='text'), \
+             patch('municipaliq.cli.generate_minutes', side_effect=fake_generate):
             cli._generate_one(meeting, [meeting])
         assert captured['agenda_text'] == ''
 
@@ -866,7 +866,7 @@ class TestEligibleAllBranches:
 
 class TestFolderIsReorgBranch:
     def test_returns_false_when_folder_key_absent(self):
-        from open_meeting import board_sync
+        from municipaliq import board_sync
         assert board_sync._folder_is_reorg({'date': '2025-05-12'}) is False
 
 

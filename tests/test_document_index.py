@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from open_meeting import document_index, data_store
+from municipaliq import document_index, data_store
 
 
 MEETING = {

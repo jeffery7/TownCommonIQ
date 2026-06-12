@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from open_meeting.scraper import youtube
+from municipaliq.scraper import youtube
 
 
 SAMPLE_PLAYLIST = {

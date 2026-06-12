@@ -15,8 +15,8 @@ from typing import Optional
 
 from termcolor import colored as _tc
 
-from open_meeting import data_store, downloader, transcript
-from open_meeting.scraper import mytowngovernment
+from municipaliq import data_store, downloader, transcript
+from municipaliq.scraper import mytowngovernment
 
 _KEY_DOCS = 'docs_saved'
 _KEY_AGENDA = 'agenda_saved'

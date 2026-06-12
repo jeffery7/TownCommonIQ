@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 from youtube_transcript_api._errors import IpBlocked, NoTranscriptFound, TranscriptsDisabled, VideoUnplayable
 
-from open_meeting import transcript
+from municipaliq import transcript
 
 
 def _make_snippet(text: str):
@@ -98,7 +98,7 @@ class TestConfigureProxy:
     def test_do_fetch_passes_client_to_api(self):
         mock_instance = MagicMock()
         mock_instance.fetch.return_value = SAMPLE_SNIPPETS
-        with patch('open_meeting.transcript.YouTubeTranscriptApi', return_value=mock_instance) as mock_cls:
+        with patch('municipaliq.transcript.YouTubeTranscriptApi', return_value=mock_instance) as mock_cls:
             transcript._do_fetch('abc123')
         mock_cls.assert_called_once_with(http_client=transcript._cfg.http_client)
 
@@ -107,7 +107,7 @@ class TestFetchYoutubeTranscript:
     def test_returns_text_on_success(self):
         mock_instance = MagicMock()
         mock_instance.fetch.return_value = SAMPLE_SNIPPETS
-        with patch('open_meeting.transcript.YouTubeTranscriptApi', return_value=mock_instance):
+        with patch('municipaliq.transcript.YouTubeTranscriptApi', return_value=mock_instance):
             result = transcript._fetch_youtube_transcript('abc123')
         assert result is not None
         assert 'Hello everyone.' in result
@@ -115,28 +115,28 @@ class TestFetchYoutubeTranscript:
     def test_returns_none_on_no_transcript(self):
         mock_instance = MagicMock()
         mock_instance.fetch.side_effect = NoTranscriptFound('abc123', [], {})
-        with patch('open_meeting.transcript.YouTubeTranscriptApi', return_value=mock_instance):
+        with patch('municipaliq.transcript.YouTubeTranscriptApi', return_value=mock_instance):
             result = transcript._fetch_youtube_transcript('abc123')
         assert result is None
 
     def test_returns_none_on_disabled(self):
         mock_instance = MagicMock()
         mock_instance.fetch.side_effect = TranscriptsDisabled('abc123')
-        with patch('open_meeting.transcript.YouTubeTranscriptApi', return_value=mock_instance):
+        with patch('municipaliq.transcript.YouTubeTranscriptApi', return_value=mock_instance):
             result = transcript._fetch_youtube_transcript('abc123')
         assert result is None
 
     def test_returns_none_on_ip_blocked(self):
         mock_instance = MagicMock()
         mock_instance.fetch.side_effect = IpBlocked('abc123')
-        with patch('open_meeting.transcript.YouTubeTranscriptApi', return_value=mock_instance):
+        with patch('municipaliq.transcript.YouTubeTranscriptApi', return_value=mock_instance):
             result = transcript._fetch_youtube_transcript('abc123')
         assert result is None
 
     def test_returns_none_on_video_unplayable(self):
         mock_instance = MagicMock()
         mock_instance.fetch.side_effect = VideoUnplayable('abc123', 'processing', [])
-        with patch('open_meeting.transcript.YouTubeTranscriptApi', return_value=mock_instance):
+        with patch('municipaliq.transcript.YouTubeTranscriptApi', return_value=mock_instance):
             result = transcript._fetch_youtube_transcript('abc123')
         assert result is None
 

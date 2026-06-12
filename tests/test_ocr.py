@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 
-from open_meeting import ocr
+from municipaliq import ocr
 
 
 class TestSidecarPath:
@@ -21,7 +21,7 @@ class TestExtractWithPypdf:
         mock_reader = MagicMock()
         mock_reader.pages = [MagicMock()]
         mock_reader.pages[0].extract_text.return_value = 'Meeting Minutes April 2025'
-        with patch('open_meeting.ocr.PdfReader', return_value=mock_reader):
+        with patch('municipaliq.ocr.PdfReader', return_value=mock_reader):
             result = ocr._extract_with_pypdf(pdf.read_bytes())
         assert 'Meeting Minutes' in result
 
@@ -31,12 +31,12 @@ class TestExtractWithPypdf:
         mock_reader = MagicMock()
         mock_reader.pages = [MagicMock()]
         mock_reader.pages[0].extract_text.return_value = ''
-        with patch('open_meeting.ocr.PdfReader', return_value=mock_reader):
+        with patch('municipaliq.ocr.PdfReader', return_value=mock_reader):
             result = ocr._extract_with_pypdf(pdf.read_bytes())
         assert result == ''
 
     def test_returns_empty_on_exception(self):
-        with patch('open_meeting.ocr.PdfReader', side_effect=Exception('bad pdf')):
+        with patch('municipaliq.ocr.PdfReader', side_effect=Exception('bad pdf')):
             result = ocr._extract_with_pypdf(b'garbage')
         assert result == ''
 
@@ -44,15 +44,15 @@ class TestExtractWithPypdf:
 class TestOcrPages:
     def test_calls_tesseract_on_each_page(self):
         mock_img = MagicMock()
-        with patch('open_meeting.ocr.convert_from_bytes', return_value=[mock_img, mock_img]), \
-             patch('open_meeting.ocr.pytesseract.image_to_string',
+        with patch('municipaliq.ocr.convert_from_bytes', return_value=[mock_img, mock_img]), \
+             patch('municipaliq.ocr.pytesseract.image_to_string',
                    return_value='Board Minutes') as mock_ocr:
             result = ocr._ocr_pages(b'fake pdf bytes')
         assert mock_ocr.call_count == 2
         assert 'Board Minutes' in result
 
     def test_returns_empty_on_exception(self):
-        with patch('open_meeting.ocr.convert_from_bytes',
+        with patch('municipaliq.ocr.convert_from_bytes',
                    side_effect=Exception('poppler error')):
             result = ocr._ocr_pages(b'bad bytes')
         assert result == ''

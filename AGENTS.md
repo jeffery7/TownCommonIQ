@@ -21,50 +21,50 @@ Meetings are pulled from [MyTownGovernment.org](https://www.mytowngovernment.org
 ```bash
 pip install -r requirements.txt
 export ANTHROPIC_API_KEY=your_key_here
-export OPEN_MEETING_TOWN=Hardwick   # defaults to Hardwick if not set
+export MUNICIPALIQ_TOWN=Hardwick   # defaults to Hardwick if not set
 ```
 
 ## CLI Usage
 
 ```bash
 # Refresh meeting and video data from MyTownGovernment.org and YouTube
-python -m open_meeting sync
+python -m municipaliq sync
 
 # Rebuild board officer history from reorganization meeting transcripts
-python -m open_meeting sync-board
+python -m municipaliq sync-board
 
 # Sync minutes listing from the town website (hardwick-ma.gov); downloads files via Firefox
-python -m open_meeting sync-town
-python -m open_meeting sync-town --no-headless   # show browser window if Cloudflare challenges occur
+python -m municipaliq sync-town
+python -m municipaliq sync-town --no-headless   # show browser window if Cloudflare challenges occur
 
 # List meetings (combine flags freely)
-python -m open_meeting list
-python -m open_meeting list --missing            # only meetings with no official minutes URL
-python -m open_meeting list --no-draft           # only meetings without a locally generated draft
-python -m open_meeting list --has-transcript     # only meetings that have a local transcript
+python -m municipaliq list
+python -m municipaliq list --missing            # only meetings with no official minutes URL
+python -m municipaliq list --no-draft           # only meetings without a locally generated draft
+python -m municipaliq list --has-transcript     # only meetings that have a local transcript
 
 # Download documents, agendas, and transcripts for archived meetings
-python -m open_meeting archive --date 2024-03-15
-python -m open_meeting archive --since 2024-01-01
-python -m open_meeting archive --all
-python -m open_meeting archive --all --recordings           # also download YouTube video (~1.5 GB each)
-python -m open_meeting archive --all --recordings --audio-only  # audio track only (~150 MB each)
-python -m open_meeting archive --all --cookies cookies.txt  # Netscape cookies for YouTube IP blocks
-python -m open_meeting archive --all --proxy socks5://127.0.0.1:1080
+python -m municipaliq archive --date 2024-03-15
+python -m municipaliq archive --since 2024-01-01
+python -m municipaliq archive --all
+python -m municipaliq archive --all --recordings           # also download YouTube video (~1.5 GB each)
+python -m municipaliq archive --all --recordings --audio-only  # audio track only (~150 MB each)
+python -m municipaliq archive --all --cookies cookies.txt  # Netscape cookies for YouTube IP blocks
+python -m municipaliq archive --all --proxy socks5://127.0.0.1:1080
 
 # Generate draft minutes (.docx)
-python -m open_meeting generate --date 2024-03-15
-python -m open_meeting generate --since 2024-01-01   # all eligible meetings on or after date
-python -m open_meeting generate --all
-python -m open_meeting generate --all --force         # overwrite existing drafts
+python -m municipaliq generate --date 2024-03-15
+python -m municipaliq generate --since 2024-01-01   # all eligible meetings on or after date
+python -m municipaliq generate --all
+python -m municipaliq generate --all --force         # overwrite existing drafts
 
 # Record which board members were absent at a meeting (assumed all present otherwise)
-python -m open_meeting set-attendance --date 2024-03-15 --absent "Eric W. Vollheim"
-python -m open_meeting set-attendance --date 2024-03-15 --absent "Alice Smith, Bob Jones"
+python -m municipaliq set-attendance --date 2024-03-15 --absent "Eric W. Vollheim"
+python -m municipaliq set-attendance --date 2024-03-15 --absent "Alice Smith, Bob Jones"
 
 # Compare minutes availability between MyTownGovernment.org and the town website
-python -m open_meeting compare
-python -m open_meeting compare --output report.txt
+python -m municipaliq compare
+python -m municipaliq compare --output report.txt
 ```
 
 ## Style
@@ -72,13 +72,13 @@ python -m open_meeting compare --output report.txt
 Follow [WeMake Python Styleguide](https://wemake-python-styleguide.readthedocs.io/en/latest/).  Avoid using "# noqa:" comments or updating the flake8 configuration to solve problems unless absolutely necessary.
 
 ```bash
-flake8 --format=html --htmldir=flake8-report open_meeting/ tests/  
+flake8 --format=html --htmldir=flake8-report municipaliq/ tests/  
 ```
 
 ## Tests
 
 ```bash
-pytest tests/ -v --cov=open_meeting --cov-report=html
+pytest tests/ -v --cov=municipaliq --cov-report=html
 
 # Single test
 pytest tests/test_correlator.py::TestCorrelate::test_matches_same_day
@@ -92,7 +92,7 @@ Data flows in one direction: **scrape → cache → correlate → transcribe →
 Whenever possible, prefer the YouTube transcript over generating locally with Whisper.
 
 ```
-open_meeting/
+municipaliq/
 ├── scraper/
 │   ├── mytowngovernment.py   # requests + BeautifulSoup → list of meeting dicts
 │   └── youtube.py            # yt-dlp (metadata-only) → list of video dicts
@@ -107,11 +107,11 @@ open_meeting/
 ### Data folder layout
 
 Data is organised by town under `data/<town>/`.  The active town is set via
-the `OPEN_MEETING_TOWN` environment variable (default: `Hardwick`).
+the `MUNICIPALIQ_TOWN` environment variable (default: `Hardwick`).
 
 ```
 data/
-└── Hardwick/                      # one directory per town (OPEN_MEETING_TOWN)
+└── Hardwick/                      # one directory per town (MUNICIPALIQ_TOWN)
     ├── meetings.json              # master list of all meetings with status and cross-references
     ├── name_corrections.json      # a dictionary of name corrections
     ├── youtube.json               # cached YouTube stream list

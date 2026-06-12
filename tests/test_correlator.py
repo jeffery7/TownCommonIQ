@@ -1,4 +1,4 @@
-from open_meeting import correlator
+from municipaliq import correlator
 
 
 MEETING_A = {'date': '2024-03-15', 'status': 'held', 'youtube_id': None}

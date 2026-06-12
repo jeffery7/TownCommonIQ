@@ -1,4 +1,4 @@
-from open_meeting import reporter
+from municipaliq import reporter
 
 
 _MTG_WITH_MINUTES = {

@@ -1,7 +1,7 @@
 """Reads and writes meeting data to and from the local data/ cache directory.
 
 Data is organised by town under data/<town>/ at the project root.  The active
-town is read from the OPEN_MEETING_TOWN environment variable, defaulting to
+town is read from the MUNICIPALIQ_TOWN environment variable, defaulting to
 'Hardwick'.  Meeting source files each get their own sub-folder named after
 the meeting date and time, e.g. data/Hardwick/meetings/YYYY/YYYY-MM-DD_HHMM/.
 
@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Optional
 
 _ROOT = Path(__file__).parent.parent
-TOWN_NAME = os.environ.get('OPEN_MEETING_TOWN', 'Hardwick')
+TOWN_NAME = os.environ.get('MUNICIPALIQ_TOWN', 'Hardwick')
 DATA_DIR = _ROOT / 'data' / TOWN_NAME
 MEETINGS_JSON = DATA_DIR / 'meetings.json'
 YOUTUBE_JSON = DATA_DIR / 'youtube.json'
