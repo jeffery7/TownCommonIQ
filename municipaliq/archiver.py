@@ -285,6 +285,9 @@ def _ensure_recording(meeting: dict, folder: Path, audio_only: bool = False) -> 
         return False
     ext = '.m4a' if audio_only else '.mp4'
     dest = folder / f'{folder.name}_recording{ext}'
+    msg = '→ downloading recording (may take a while)...'
+    sys.stdout.write(f'{_ts()}    {_col(msg, "cyan")}\n')
+    sys.stdout.flush()
     try:
         transcript.download_recording(video_id, dest, audio_only=audio_only)
     except Exception:

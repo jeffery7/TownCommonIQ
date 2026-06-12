@@ -100,6 +100,16 @@ class TestCmdSync:
         meetings = data_store.load_meetings()
         assert any(m['date'] == '2024-06-01' for m in meetings)
 
+    def test_sync_skips_video_with_test_in_title(self):
+        test_video = {'video_id': 'zzz111', 'date': '2024-06-02', 'title': 'HardwickTV Audio Test 6/2/24', 'url': 'https://yt.be/zzz111'}
+        board_info = {'chair': None, 'members': []}
+        with patch('municipaliq.scraper.mytowngovernment.fetch_meetings', return_value=([], board_info)), \
+             patch('municipaliq.scraper.youtube.fetch_streams', return_value=[test_video]), \
+             patch('municipaliq.correlator.correlate', return_value=[]):
+            args = MagicMock()
+            cli._cmd_sync(args)
+        assert data_store.load_meetings() == []
+
     def test_sync_skips_video_with_no_date(self):
         no_date_video = {'video_id': 'zzz000', 'date': None, 'title': 'No date', 'url': 'https://yt.be/zzz000'}
         board_info = {'chair': None, 'members': []}

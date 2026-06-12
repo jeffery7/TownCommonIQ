@@ -34,6 +34,7 @@ _KEY_STATUS = 'status'
 _KEY_MEETING_URL = 'meeting_url'
 _KEY_AGENDA_URL = 'agenda_url'
 _KEY_TIME = 'time'
+_KEY_TITLE = 'title'
 
 
 def _out(msg: str, err: bool = False) -> None:
@@ -60,6 +61,9 @@ def _add_youtube_only_meetings(
     board sometimes streams meetings that do not appear on MyTownGovernment yet).
     This function creates minimal meeting dicts for them so they can still be
     processed by the generate command.
+
+    Videos with "test" in the title (e.g. equipment/audio tests) are skipped
+    since they are not real meetings.
     """
     existing_dates = {meeting[_KEY_DATE] for meeting in meetings}
     matched_ids = {
@@ -67,8 +71,12 @@ def _add_youtube_only_meetings(
         for meeting in meetings
         if meeting.get(_KEY_YOUTUBE_ID)
     }
+    candidates = [
+        video for video in videos
+        if 'test' not in video.get(_KEY_TITLE, '').lower()
+    ]
     added = 0
-    for video in videos:
+    for video in candidates:
         if video['video_id'] in matched_ids:
             continue
         video_date = video.get(_KEY_DATE)
