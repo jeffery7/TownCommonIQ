@@ -1,0 +1,11 @@
+# Project-level Codex CLI configuration for MunicipalIQ.
+#
+# These settings only take effect once you mark this project/worktree as
+# "trusted" in your own Codex CLI (a local, per-collaborator step) —
+# see https://developers.openai.com/codex/config-basic for details.
+
+# Ask before anything risky, but don't require approval for every step.
+approval_policy = "on-request"
+
+# Allow reads/writes within the repo without per-command prompts.
+sandbox_mode = "workspace-write"

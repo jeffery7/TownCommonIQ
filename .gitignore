@@ -222,3 +222,6 @@ __marimo__/
 
 # Local meeting data cache (recordings, PDFs, transcripts, generated drafts)
 data/
+
+# Personal Claude Code overrides (not shared with the team)
+.claude/settings.local.json

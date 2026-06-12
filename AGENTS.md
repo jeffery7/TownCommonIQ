@@ -24,6 +24,25 @@ export ANTHROPIC_API_KEY=your_key_here
 export MUNICIPALIQ_TOWN=Hardwick   # defaults to Hardwick if not set
 ```
 
+## Agent Permissions
+
+This repo ships project-level permission configs so AI coding agents can run
+routine commands (tests, lint, the CLI) without an approval prompt on every
+step:
+
+- **Claude Code**: `.claude/settings.json` pre-approves `pytest`, `flake8`,
+  `python -m municipaliq`, and read-only `git status` / `git diff` / `git
+  log`. Personal overrides go in `.claude/settings.local.json` (gitignored).
+- **Codex CLI (ChatGPT)**: `.codex/config.toml` sets `approval_policy =
+  "on-request"` and `sandbox_mode = "workspace-write"`. Each collaborator
+  must mark this project as **trusted** in their own Codex CLI for the
+  project config to take effect.
+
+Commands with real side effects — `git push`, `archive --recordings`
+(downloads large files), `generate` (calls the Claude API) — are
+intentionally left out of these allowlists and should run with explicit
+confirmation.
+
 ## CLI Usage
 
 ```bash
