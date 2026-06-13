@@ -1,7 +1,5 @@
 # TownCommonIQ
 
-![TownCommonIQ](TownCommonIQ_Logo.jpg)
-
 TownCommonIQ builds a searchable archive of local government meeting records —
 agendas, recordings, transcripts, and minutes — and can generate draft minutes
 for meetings where none have been posted.
