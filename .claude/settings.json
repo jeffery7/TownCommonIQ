@@ -3,7 +3,7 @@
     "allow": [
       "Bash(pytest:*)",
       "Bash(flake8:*)",
-      "Bash(python -m municipaliq:*)",
+      "Bash(python -m towncommoniq:*)",
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)"

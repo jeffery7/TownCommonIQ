@@ -21,7 +21,7 @@ Meetings are pulled from [MyTownGovernment.org](https://www.mytowngovernment.org
 ```bash
 pip install -r requirements.txt
 export ANTHROPIC_API_KEY=your_key_here
-export MUNICIPALIQ_TOWN=Hardwick   # defaults to Hardwick if not set
+export TOWNCOMMONIQ_TOWN=Hardwick   # defaults to Hardwick if not set
 ```
 
 ## Agent Permissions
@@ -31,7 +31,7 @@ routine commands (tests, lint, the CLI) without an approval prompt on every
 step:
 
 - **Claude Code**: `.claude/settings.json` pre-approves `pytest`, `flake8`,
-  `python -m municipaliq`, and read-only `git status` / `git diff` / `git
+  `python -m towncommoniq`, and read-only `git status` / `git diff` / `git
   log`. Personal overrides go in `.claude/settings.local.json` (gitignored).
 - **Codex CLI (ChatGPT)**: `.codex/config.toml` sets `approval_policy =
   "on-request"` and `sandbox_mode = "workspace-write"`. Each collaborator
@@ -50,43 +50,43 @@ confirmation.
 
 ```bash
 # Refresh meeting and video data from MyTownGovernment.org and YouTube
-python -m municipaliq sync
+python -m towncommoniq sync
 
 # Rebuild board officer history from reorganization meeting transcripts
-python -m municipaliq sync-board
+python -m towncommoniq sync-board
 
 # Sync minutes listing from the town website (hardwick-ma.gov); downloads files via Firefox
-python -m municipaliq sync-town
-python -m municipaliq sync-town --no-headless   # show browser window if Cloudflare challenges occur
+python -m towncommoniq sync-town
+python -m towncommoniq sync-town --no-headless   # show browser window if Cloudflare challenges occur
 
 # List meetings (combine flags freely)
-python -m municipaliq list
-python -m municipaliq list --missing            # only meetings with no official minutes URL
-python -m municipaliq list --no-draft           # only meetings without a locally generated draft
-python -m municipaliq list --has-transcript     # only meetings that have a local transcript
+python -m towncommoniq list
+python -m towncommoniq list --missing            # only meetings with no official minutes URL
+python -m towncommoniq list --no-draft           # only meetings without a locally generated draft
+python -m towncommoniq list --has-transcript     # only meetings that have a local transcript
 
 # Download documents, agendas, and transcripts for archived meetings
-python -m municipaliq archive --date 2024-03-15
-python -m municipaliq archive --since 2024-01-01
-python -m municipaliq archive --all
-python -m municipaliq archive --all --recordings           # also download YouTube video (~1.5 GB each)
-python -m municipaliq archive --all --recordings --audio-only  # audio track only (~150 MB each)
-python -m municipaliq archive --all --cookies cookies.txt  # Netscape cookies for YouTube IP blocks
-python -m municipaliq archive --all --proxy socks5://127.0.0.1:1080
+python -m towncommoniq archive --date 2024-03-15
+python -m towncommoniq archive --since 2024-01-01
+python -m towncommoniq archive --all
+python -m towncommoniq archive --all --recordings           # also download YouTube video (~1.5 GB each)
+python -m towncommoniq archive --all --recordings --audio-only  # audio track only (~150 MB each)
+python -m towncommoniq archive --all --cookies cookies.txt  # Netscape cookies for YouTube IP blocks
+python -m towncommoniq archive --all --proxy socks5://127.0.0.1:1080
 
 # Generate draft minutes (.docx)
-python -m municipaliq generate --date 2024-03-15
-python -m municipaliq generate --since 2024-01-01   # all eligible meetings on or after date
-python -m municipaliq generate --all
-python -m municipaliq generate --all --force         # overwrite existing drafts
+python -m towncommoniq generate --date 2024-03-15
+python -m towncommoniq generate --since 2024-01-01   # all eligible meetings on or after date
+python -m towncommoniq generate --all
+python -m towncommoniq generate --all --force         # overwrite existing drafts
 
 # Record which board members were absent at a meeting (assumed all present otherwise)
-python -m municipaliq set-attendance --date 2024-03-15 --absent "Eric W. Vollheim"
-python -m municipaliq set-attendance --date 2024-03-15 --absent "Alice Smith, Bob Jones"
+python -m towncommoniq set-attendance --date 2024-03-15 --absent "Eric W. Vollheim"
+python -m towncommoniq set-attendance --date 2024-03-15 --absent "Alice Smith, Bob Jones"
 
 # Compare minutes availability between MyTownGovernment.org and the town website
-python -m municipaliq compare
-python -m municipaliq compare --output report.txt
+python -m towncommoniq compare
+python -m towncommoniq compare --output report.txt
 ```
 
 ## Style
@@ -94,13 +94,13 @@ python -m municipaliq compare --output report.txt
 Follow [WeMake Python Styleguide](https://wemake-python-styleguide.readthedocs.io/en/latest/).  Avoid using "# noqa:" comments or updating the flake8 configuration to solve problems unless absolutely necessary.
 
 ```bash
-flake8 --format=html --htmldir=flake8-report municipaliq/ tests/  
+flake8 --format=html --htmldir=flake8-report towncommoniq/ tests/  
 ```
 
 ## Tests
 
 ```bash
-pytest tests/ -v --cov=municipaliq --cov-report=html
+pytest tests/ -v --cov=towncommoniq --cov-report=html
 
 # Single test
 pytest tests/test_correlator.py::TestCorrelate::test_matches_same_day
@@ -114,7 +114,7 @@ Data flows in one direction: **scrape → cache → correlate → transcribe →
 Whenever possible, prefer the YouTube transcript over generating locally with Whisper.
 
 ```
-municipaliq/
+towncommoniq/
 ├── scraper/
 │   ├── mytowngovernment.py   # requests + BeautifulSoup → list of meeting dicts
 │   └── youtube.py            # yt-dlp (metadata-only) → list of video dicts
@@ -129,11 +129,11 @@ municipaliq/
 ### Data folder layout
 
 Data is organised by town under `data/<town>/`.  The active town is set via
-the `MUNICIPALIQ_TOWN` environment variable (default: `Hardwick`).
+the `TOWNCOMMONIQ_TOWN` environment variable (default: `Hardwick`).
 
 ```
 data/
-└── Hardwick/                      # one directory per town (MUNICIPALIQ_TOWN)
+└── Hardwick/                      # one directory per town (TOWNCOMMONIQ_TOWN)
     ├── meetings.json              # master list of all meetings with status and cross-references
     ├── name_corrections.json      # a dictionary of name corrections
     ├── youtube.json               # cached YouTube stream list

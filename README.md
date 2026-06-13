@@ -1,8 +1,8 @@
-# MunicipalIQ
+# TownCommonIQ
 
-![MunicipalIQ](MunicipalIQ_Logo.jpg)
+![TownCommonIQ](TownCommonIQ_Logo.jpg)
 
-MunicipalIQ builds a searchable archive of local government meeting records —
+TownCommonIQ builds a searchable archive of local government meeting records —
 agendas, recordings, transcripts, and minutes — and can generate draft minutes
 for meetings where none have been posted.
 
@@ -31,12 +31,12 @@ Select Board**, but is designed to be adaptable to other Massachusetts towns.
 ```bash
 pip install -r requirements.txt
 export ANTHROPIC_API_KEY=your_key_here
-export MUNICIPALIQ_TOWN=Hardwick   # defaults to Hardwick if not set
+export TOWNCOMMONIQ_TOWN=Hardwick   # defaults to Hardwick if not set
 
-python -m municipaliq sync       # refresh meeting and video listings
-python -m municipaliq list       # see what's known
-python -m municipaliq archive --all
-python -m municipaliq generate --all
+python -m towncommoniq sync       # refresh meeting and video listings
+python -m towncommoniq list       # see what's known
+python -m towncommoniq archive --all
+python -m towncommoniq generate --all
 ```
 
 ## Documentation

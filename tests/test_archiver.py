@@ -1,8 +1,8 @@
 import datetime
 from unittest.mock import patch
 
-from municipaliq import archiver, data_store, downloader, transcript
-from municipaliq.scraper import mytowngovernment
+from towncommoniq import archiver, data_store, downloader, transcript
+from towncommoniq.scraper import mytowngovernment
 
 
 MEETING = {

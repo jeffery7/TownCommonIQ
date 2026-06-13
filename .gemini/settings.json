@@ -3,7 +3,7 @@
     "allowed": [
       "run_shell_command(pytest)",
       "run_shell_command(flake8)",
-      "run_shell_command(python -m municipaliq)",
+      "run_shell_command(python -m towncommoniq)",
       "run_shell_command(git status)",
       "run_shell_command(git diff)",
       "run_shell_command(git log)"

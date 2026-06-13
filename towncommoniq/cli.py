@@ -1,6 +1,6 @@
 """Command-line interface for the Hardwick minutes generator.
 
-Entry point: `python -m municipaliq <command> [options]`
+Entry point: `python -m towncommoniq <command> [options]`
 
 Available commands:
   sync      — refresh meeting and video data from the web
@@ -8,7 +8,7 @@ Available commands:
   archive   — download all available documents and transcripts locally
   generate  — produce a draft .docx for one or more meetings
 
-Run `python -m municipaliq --help` for full usage.
+Run `python -m towncommoniq --help` for full usage.
 """
 import argparse
 import io
@@ -19,11 +19,11 @@ from pathlib import Path
 import requests
 from pypdf import PdfReader
 
-from municipaliq import (
+from towncommoniq import (
     archiver, board_sync, correlator, data_store, document_index, reporter, transcript,
 )
-from municipaliq.minutes_generator import generate_minutes
-from municipaliq.scraper import hardwick_town, mytowngovernment, youtube
+from towncommoniq.minutes_generator import generate_minutes
+from towncommoniq.scraper import hardwick_town, mytowngovernment, youtube
 
 _REQUEST_TIMEOUT = 30
 _KEY_DATE = 'date'
@@ -595,7 +595,7 @@ def _add_list_subparser(sub) -> None:
 def _build_arg_parser() -> argparse.ArgumentParser:
     """Construct and return the top-level argument parser with all subcommands."""
     parser = argparse.ArgumentParser(
-        prog='python -m municipaliq',
+        prog='python -m towncommoniq',
         description='Generate Hardwick Select Board draft meeting minutes.',
     )
     sub = parser.add_subparsers(dest='command', required=True)

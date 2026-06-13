@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from municipaliq import document_index, data_store
+from towncommoniq import document_index, data_store
 
 
 MEETING = {

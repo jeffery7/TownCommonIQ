@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from municipaliq import downloader
+from towncommoniq import downloader
 
 
 @pytest.fixture()

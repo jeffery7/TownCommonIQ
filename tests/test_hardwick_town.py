@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
-from municipaliq.scraper import hardwick_town
+from towncommoniq.scraper import hardwick_town
 
 
 _LISTING_HTML = """
@@ -327,24 +327,24 @@ class TestCreateDriver:
         return mock_opts
 
     def test_headless_adds_argument(self):
-        with patch('municipaliq.scraper.hardwick_town.webdriver.Firefox'), \
-             patch('municipaliq.scraper.hardwick_town.FirefoxOptions') as mock_cls:
+        with patch('towncommoniq.scraper.hardwick_town.webdriver.Firefox'), \
+             patch('towncommoniq.scraper.hardwick_town.FirefoxOptions') as mock_cls:
             mock_opts = self._make_opts()
             mock_cls.return_value = mock_opts
             hardwick_town._create_driver(headless=True)
         mock_opts.add_argument.assert_called_once_with('--headless')
 
     def test_non_headless_skips_argument(self):
-        with patch('municipaliq.scraper.hardwick_town.webdriver.Firefox'), \
-             patch('municipaliq.scraper.hardwick_town.FirefoxOptions') as mock_cls:
+        with patch('towncommoniq.scraper.hardwick_town.webdriver.Firefox'), \
+             patch('towncommoniq.scraper.hardwick_town.FirefoxOptions') as mock_cls:
             mock_opts = self._make_opts()
             mock_cls.return_value = mock_opts
             hardwick_town._create_driver(headless=False)
         mock_opts.add_argument.assert_not_called()
 
     def test_download_dir_sets_preferences(self):
-        with patch('municipaliq.scraper.hardwick_town.webdriver.Firefox'), \
-             patch('municipaliq.scraper.hardwick_town.FirefoxOptions') as mock_cls:
+        with patch('towncommoniq.scraper.hardwick_town.webdriver.Firefox'), \
+             patch('towncommoniq.scraper.hardwick_town.FirefoxOptions') as mock_cls:
             mock_opts = self._make_opts()
             mock_cls.return_value = mock_opts
             hardwick_town._create_driver(download_dir='/tmp/dl')
@@ -353,8 +353,8 @@ class TestCreateDriver:
         assert 'pdfjs.disabled' in pref_names
 
     def test_no_preferences_without_download_dir(self):
-        with patch('municipaliq.scraper.hardwick_town.webdriver.Firefox'), \
-             patch('municipaliq.scraper.hardwick_town.FirefoxOptions') as mock_cls:
+        with patch('towncommoniq.scraper.hardwick_town.webdriver.Firefox'), \
+             patch('towncommoniq.scraper.hardwick_town.FirefoxOptions') as mock_cls:
             mock_opts = self._make_opts()
             mock_cls.return_value = mock_opts
             hardwick_town._create_driver(download_dir=None)
@@ -444,7 +444,7 @@ class TestFetchMinutesList:
         ctx = self._make_ctx(_LISTING_HTML)
         with patch.object(hardwick_town, '_create_driver', return_value=ctx), \
              patch.object(hardwick_town, '_wait_past_cloudflare'), \
-             patch('municipaliq.scraper.hardwick_town.time.sleep'):
+             patch('towncommoniq.scraper.hardwick_town.time.sleep'):
             result = hardwick_town.fetch_minutes_list()
         assert len(result) == 3
         assert result[0]['date'] == '2026-03-30'
@@ -453,7 +453,7 @@ class TestFetchMinutesList:
         ctx = self._make_ctx('<html><body></body></html>')
         with patch.object(hardwick_town, '_create_driver', return_value=ctx), \
              patch.object(hardwick_town, '_wait_past_cloudflare'), \
-             patch('municipaliq.scraper.hardwick_town.time.sleep'):
+             patch('towncommoniq.scraper.hardwick_town.time.sleep'):
             result = hardwick_town.fetch_minutes_list()
         assert result == []
 

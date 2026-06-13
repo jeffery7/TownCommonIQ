@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from municipaliq import minutes_generator
+from towncommoniq import minutes_generator
 
 
 MEETING = {
@@ -57,7 +57,7 @@ def mock_openai(monkeypatch):
     ]
 
     monkeypatch.setattr(
-        'municipaliq.minutes_generator.OpenAI',
+        'towncommoniq.minutes_generator.OpenAI',
         lambda **kw: mock_client,
     )
     return mock_client
@@ -380,7 +380,7 @@ class TestGenerateMinutes:
             _make_openai_response('**Bold text** should become plain text.'),
         ]
         monkeypatch.setattr(
-            'municipaliq.minutes_generator.OpenAI',
+            'towncommoniq.minutes_generator.OpenAI',
             lambda **kw: mock_client,
         )
         output = tmp_path / 'minutes_draft_generated.docx'
@@ -397,7 +397,7 @@ class TestGenerateMinutes:
             ),
         ]
         monkeypatch.setattr(
-            'municipaliq.minutes_generator.OpenAI',
+            'towncommoniq.minutes_generator.OpenAI',
             lambda **kw: mock_client,
         )
         output = tmp_path / 'minutes.docx'

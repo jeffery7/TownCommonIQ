@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from municipaliq import data_store
+from towncommoniq import data_store
 
 
 @pytest.fixture(autouse=True)

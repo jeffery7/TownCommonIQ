@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from municipaliq.scraper import mytowngovernment
+from towncommoniq.scraper import mytowngovernment
 
 
 SAMPLE_HTML = """

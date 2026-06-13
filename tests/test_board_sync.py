@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from municipaliq import board_sync, data_store
+from towncommoniq import board_sync, data_store
 
 
 @pytest.fixture()
@@ -172,7 +172,7 @@ class TestSyncBoardHistory:
         mock_officers = {'chair': 'Alice', 'vice_chair': 'Bob', 'clerk': 'Carol'}
         with patch.object(data_store, 'load_meetings', return_value=meetings), \
              patch.object(board_sync, '_extract_officers', return_value=mock_officers), \
-             patch('municipaliq.board_sync.OpenAI'):
+             patch('towncommoniq.board_sync.OpenAI'):
             count = board_sync.sync_board_history(verbose=False)
 
         assert count == 1
