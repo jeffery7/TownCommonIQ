@@ -328,7 +328,7 @@ class TestCreateDriver:
 
     def test_headless_adds_argument(self):
         with patch('towncommoniq.scraper.hardwick_town.webdriver.Firefox'), \
-             patch('towncommoniq.scraper.hardwick_town.FirefoxOptions') as mock_cls:
+             patch('towncommoniq.scraper.hardwick_town.webdriver.FirefoxOptions') as mock_cls:
             mock_opts = self._make_opts()
             mock_cls.return_value = mock_opts
             hardwick_town._create_driver(headless=True)
@@ -336,7 +336,7 @@ class TestCreateDriver:
 
     def test_non_headless_skips_argument(self):
         with patch('towncommoniq.scraper.hardwick_town.webdriver.Firefox'), \
-             patch('towncommoniq.scraper.hardwick_town.FirefoxOptions') as mock_cls:
+             patch('towncommoniq.scraper.hardwick_town.webdriver.FirefoxOptions') as mock_cls:
             mock_opts = self._make_opts()
             mock_cls.return_value = mock_opts
             hardwick_town._create_driver(headless=False)
@@ -344,7 +344,7 @@ class TestCreateDriver:
 
     def test_download_dir_sets_preferences(self):
         with patch('towncommoniq.scraper.hardwick_town.webdriver.Firefox'), \
-             patch('towncommoniq.scraper.hardwick_town.FirefoxOptions') as mock_cls:
+             patch('towncommoniq.scraper.hardwick_town.webdriver.FirefoxOptions') as mock_cls:
             mock_opts = self._make_opts()
             mock_cls.return_value = mock_opts
             hardwick_town._create_driver(download_dir='/tmp/dl')
@@ -354,7 +354,7 @@ class TestCreateDriver:
 
     def test_no_preferences_without_download_dir(self):
         with patch('towncommoniq.scraper.hardwick_town.webdriver.Firefox'), \
-             patch('towncommoniq.scraper.hardwick_town.FirefoxOptions') as mock_cls:
+             patch('towncommoniq.scraper.hardwick_town.webdriver.FirefoxOptions') as mock_cls:
             mock_opts = self._make_opts()
             mock_cls.return_value = mock_opts
             hardwick_town._create_driver(download_dir=None)

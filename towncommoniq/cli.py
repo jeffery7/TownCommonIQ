@@ -12,6 +12,7 @@ Run `python -m towncommoniq --help` for full usage.
 """
 import argparse
 import io
+import logging
 import sys
 import time
 from pathlib import Path
@@ -20,10 +21,13 @@ import requests
 from pypdf import PdfReader
 
 from towncommoniq import (
-    archiver, board_sync, correlator, data_store, document_index, reporter, transcript,
+    archiver, board_sync, correlator, data_store, document_index, logging_setup, reporter,
+    transcript,
 )
 from towncommoniq.minutes_generator import generate_minutes
 from towncommoniq.scraper import hardwick_town, mytowngovernment, youtube
+
+_logger = logging.getLogger(__name__)
 
 _REQUEST_TIMEOUT = 30
 _KEY_DATE = 'date'
@@ -231,10 +235,12 @@ def _fetch_doc_text(doc_url: str) -> str:
     try:
         response = requests.get(doc_url, timeout=_REQUEST_TIMEOUT)
     except Exception:
+        _logger.warning('Document fetch failed for %s', doc_url, exc_info=True)
         return ''
     try:
         response.raise_for_status()
     except Exception:
+        _logger.warning('Document fetch failed for %s', doc_url, exc_info=True)
         return ''
     if response.content[:4] == b'%PDF':
         reader = PdfReader(io.BytesIO(response.content))
@@ -625,6 +631,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     """Parse command-line arguments and dispatch to the appropriate command handler."""
+    logging_setup.configure_logging()
     args = _build_arg_parser().parse_args()
     dispatch = {
         'sync': _cmd_sync,

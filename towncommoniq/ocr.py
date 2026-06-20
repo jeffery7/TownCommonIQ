@@ -10,11 +10,14 @@ Extracted text is cached in a sidecar .txt file alongside the PDF so repeated
 calls do not re-OCR the same document.
 """
 import io
+import logging
 from pathlib import Path
 
 from pdf2image import convert_from_bytes
 from pypdf import PdfReader
 import pytesseract
+
+_logger = logging.getLogger(__name__)
 
 _SIDECAR_SUFFIX = '_text.txt'
 _MAX_OCR_PAGES = 5
@@ -35,11 +38,12 @@ def _read_pdf_pages(pdf_bytes: bytes) -> str:
     return '\n'.join(parts).strip()
 
 
-def _extract_with_pypdf(pdf_bytes: bytes) -> str:
+def _extract_with_pypdf(pdf_bytes: bytes, pdf_path: Path) -> str:
     """Try to pull text directly from a digital PDF; return '' for scanned ones."""
     try:
         return _read_pdf_pages(pdf_bytes)
     except Exception:
+        _logger.warning('pypdf text extraction failed for %s', pdf_path, exc_info=True)
         return ''
 
 
@@ -55,11 +59,15 @@ def _rasterise_pdf(pdf_bytes: bytes) -> str:
     return '\n'.join(parts).strip()
 
 
-def _ocr_pages(pdf_bytes: bytes) -> str:
+def _ocr_pages(pdf_bytes: bytes, pdf_path: Path) -> str:
     """Rasterise the first few PDF pages and run Tesseract on them."""
     try:
         return _rasterise_pdf(pdf_bytes)
     except Exception:
+        _logger.warning(
+            'OCR failed for %s — check that Tesseract and Poppler are installed and on PATH',
+            pdf_path, exc_info=True,
+        )
         return ''
 
 
@@ -75,9 +83,9 @@ def extract_text(pdf_path: Path, use_cache: bool = True) -> str:
         return sidecar.read_text()
 
     pdf_bytes = pdf_path.read_bytes()
-    text = _extract_with_pypdf(pdf_bytes)
+    text = _extract_with_pypdf(pdf_bytes, pdf_path)
     if not text:
-        text = _ocr_pages(pdf_bytes)
+        text = _ocr_pages(pdf_bytes, pdf_path)
 
     if text:
         sidecar.write_text(text)

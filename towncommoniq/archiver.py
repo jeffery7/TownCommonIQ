@@ -6,6 +6,7 @@ is deliberately excluded — that remains the responsibility of
 minutes_generator.py so the two workflows stay independent.
 """
 import json
+import logging
 import os
 import re
 import sys
@@ -17,6 +18,8 @@ from termcolor import colored as _tc
 
 from towncommoniq import data_store, downloader, transcript
 from towncommoniq.scraper import mytowngovernment
+
+_logger = logging.getLogger(__name__)
 
 _KEY_DOCS = 'docs_saved'
 _KEY_AGENDA = 'agenda_saved'
@@ -291,6 +294,7 @@ def _ensure_recording(meeting: dict, folder: Path, audio_only: bool = False) -> 
     try:
         transcript.download_recording(video_id, dest, audio_only=audio_only)
     except Exception:
+        _logger.warning('Recording download failed for video %s', video_id, exc_info=True)
         return False
     return True
 

@@ -6,6 +6,7 @@ directly to a temp directory).  Downloaded files carry FILE_PREFIX to
 distinguish them from mytowngovernment.org files.
 """
 import contextlib
+import logging
 import re
 import tempfile
 import time
@@ -16,8 +17,9 @@ from types import MappingProxyType
 import requests
 from bs4 import BeautifulSoup
 from selenium import webdriver
-from selenium.common.exceptions import TimeoutException, WebDriverException
-from selenium.webdriver.firefox.options import Options as FirefoxOptions
+from selenium.common import exceptions as selenium_exceptions
+
+_logger = logging.getLogger(__name__)
 
 LISTING_URL = (
     'https://www.hardwick-ma.gov'
@@ -77,7 +79,7 @@ def _create_driver(
     When download_dir is provided, Firefox is configured to download files
     automatically to that directory instead of opening them in the viewer.
     """
-    opts = FirefoxOptions()
+    opts = webdriver.FirefoxOptions()
     if headless:
         opts.add_argument('--headless')
     if download_dir:
@@ -101,7 +103,7 @@ def _wait_past_cloudflare(driver: webdriver.Firefox, timeout: int = _CF_WAIT_SEC
         if 'Just a moment' not in driver.title:
             return
         time.sleep(_POLL_INTERVAL)
-    raise TimeoutException('Cloudflare challenge did not resolve in time')
+    raise selenium_exceptions.TimeoutException('Cloudflare challenge did not resolve in time')
 
 
 def _parse_listing(html: str) -> list[dict]:
@@ -136,7 +138,7 @@ def _fetch_file_url(driver: webdriver.Firefox, media_id: str) -> str | None:
     driver.get(url)
     try:
         _wait_past_cloudflare(driver)
-    except (TimeoutException, WebDriverException):
+    except (selenium_exceptions.TimeoutException, selenium_exceptions.WebDriverException):
         return None
     if _FILE_EXT_RE.search(driver.title):
         return url
@@ -174,10 +176,12 @@ def download_file(url: str, dest: Path) -> bool:
     try:
         response = requests.get(url, headers=dict(_HEADERS), timeout=_REQUEST_TIMEOUT, stream=True)
     except Exception:
+        _logger.warning('Download failed for %s', url, exc_info=True)
         return False
     try:
         response.raise_for_status()
     except Exception:
+        _logger.warning('Download failed for %s', url, exc_info=True)
         return False
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(response.content)
@@ -255,7 +259,7 @@ def download_all(town_records: list[dict], folders_by_date: dict, headless: bool
                 if rec.get(_KEY_DOWNLOADED) or not file_url or not folder_str or not filename:
                     continue
                 local_name = f'{FILE_PREFIX}{filename}'
-                with contextlib.suppress(TimeoutException):
+                with contextlib.suppress(selenium_exceptions.TimeoutException):
                     driver.get(file_url)
                 if _wait_for_download(Path(tmpdir_str), Path(folder_str) / local_name):
                     rec[_KEY_DOWNLOADED] = True

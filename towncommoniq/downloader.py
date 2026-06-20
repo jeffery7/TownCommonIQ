@@ -5,11 +5,14 @@ stores the server's ETag value so subsequent calls can skip unchanged files
 (304 Not Modified).  Network and I/O errors on individual documents are
 caught and returned as None so a single bad URL does not abort an archive run.
 """
+import logging
 from pathlib import Path
 from types import MappingProxyType
 from typing import Optional
 
 import requests
+
+_logger = logging.getLogger(__name__)
 
 _REQUEST_TIMEOUT = 30
 _ETAG_SUFFIX = '.etag'
@@ -106,7 +109,8 @@ def _try_download(url: Optional[str], dest: Path) -> Optional[Path]:
         return None
     try:
         download_file(url, dest)
-    except (requests.RequestException, OSError):
+    except (requests.RequestException, OSError) as exc:
+        _logger.warning('Download failed for %s: %s', url, exc)
         return None
     return dest
 
@@ -128,13 +132,15 @@ def _download_doc(url: Optional[str], folder: Path, base_name: str) -> Optional[
             request_headers['If-None-Match'] = saved
     try:
         response = requests.get(url, headers=request_headers, timeout=_REQUEST_TIMEOUT)
-    except (requests.RequestException, OSError):
+    except (requests.RequestException, OSError) as exc:
+        _logger.warning('Download failed for %s: %s', url, exc)
         return None
     if response.status_code == _HTTP_NOT_MODIFIED:
         return existing
     try:
         response.raise_for_status()
-    except requests.HTTPError:
+    except requests.HTTPError as exc:
+        _logger.warning('Download failed for %s: %s', url, exc)
         return None
     ext = _content_ext(response.headers.get('Content-Type', ''))
     if ext == _DEFAULT_EXT:

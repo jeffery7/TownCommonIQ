@@ -1,4 +1,5 @@
 openai
+boto3
 requests
 termcolor
 beautifulsoup4

@@ -9,6 +9,7 @@ This module fetches and parses all three, then merges the document URLs into
 the meeting records so the rest of the pipeline has everything in one place.
 """
 import contextlib
+import logging
 import re
 from datetime import datetime
 from types import MappingProxyType
@@ -16,6 +17,8 @@ from typing import Optional
 
 import requests
 from bs4 import BeautifulSoup
+
+_logger = logging.getLogger(__name__)
 
 BOARD_URL = (
     'https://www.mytowngovernment.org/board'
@@ -242,6 +245,7 @@ def _fetch_soup(url: str) -> Optional[BeautifulSoup]:
     try:
         return BeautifulSoup(_do_request(url).text, 'html.parser')
     except Exception:
+        _logger.warning('Failed to fetch %s', url, exc_info=True)
         return None
 
 
