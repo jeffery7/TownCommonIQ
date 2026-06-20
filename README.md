@@ -162,6 +162,47 @@ python -m towncommoniq generate --all
   --no-headless` to watch the Firefox window and see if a Cloudflare
   challenge needs solving manually.
 
+## Running Tests and Linting
+
+These commands are identical on macOS/Linux and Windows — on Windows, just
+make sure your virtual environment is activated first
+(`.venv\Scripts\Activate.ps1`).
+
+### Tests with a coverage report
+
+```bash
+pytest tests/ -v --cov=towncommoniq --cov-report=html
+```
+
+This writes an HTML report to `htmlcov/index.html`. Open it in a browser:
+
+```bash
+open htmlcov/index.html       # macOS
+xdg-open htmlcov/index.html   # Linux
+```
+
+```powershell
+start htmlcov/index.html      # Windows
+```
+
+### flake8 with an HTML report
+
+```bash
+flake8 --format=html --htmldir=flake8-report towncommoniq/ tests/
+```
+
+This writes an HTML report to `flake8-report/index.html`. Open it the same
+way:
+
+```bash
+open flake8-report/index.html       # macOS
+xdg-open flake8-report/index.html   # Linux
+```
+
+```powershell
+start flake8-report/index.html      # Windows
+```
+
 ## Documentation
 
 Full CLI reference, architecture, data layout, coding style, and test

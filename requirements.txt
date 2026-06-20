@@ -15,3 +15,4 @@ pytest
 pytest-cov
 wemake-python-styleguide
 flake8
+flake8-html
