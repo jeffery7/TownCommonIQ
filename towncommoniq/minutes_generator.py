@@ -1,5 +1,6 @@
 """Generates MGL-compliant draft meeting minutes as a .docx file."""
 import json
+import logging
 import os
 import re
 import sys
@@ -10,6 +11,8 @@ from openai import OpenAI
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt
+
+_logger = logging.getLogger(__name__)
 
 OLLAMA_HOST = os.environ.get('OLLAMA_HOST', 'http://localhost:11434')
 _MODEL = os.environ.get('OLLAMA_MODEL', 'qwen3:1.7b')
@@ -492,10 +495,12 @@ def generate_minutes(
     corrections = _load_name_corrections()
 
     sys.stdout.write('    Extracting facts from transcript...\n')
+    _logger.info('Extracting facts from transcript...')
     facts = _extract_facts(client, transcript_text, board_info)
     facts = _apply_name_corrections(facts, corrections)
 
     sys.stdout.write('    Writing minutes from extracted facts...\n')
+    _logger.info('Writing minutes from extracted facts...')
     minutes_text = _write_minutes(client, meeting, facts, board_info, agenda_text)
     minutes_text = _apply_name_corrections(minutes_text, corrections)
 

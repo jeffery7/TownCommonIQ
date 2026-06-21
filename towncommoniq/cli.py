@@ -42,9 +42,17 @@ _KEY_TITLE = 'title'
 
 
 def _out(msg: str, err: bool = False) -> None:
-    """Write a message to stdout (or stderr when err=True) followed by a newline."""
+    """Write a message to stdout (or stderr when err=True), and mirror it to the log.
+
+    stacklevel=2 attributes the log record to _out's caller (e.g. _cmd_sync)
+    rather than to _out itself, so the log's funcName column stays meaningful.
+    """
     stream = sys.stderr if err else sys.stdout
     stream.write(f'{msg}\n')
+    if err:
+        _logger.error(msg, stacklevel=2)
+    else:
+        _logger.info(msg, stacklevel=2)
 
 
 def _folder_file(folder: Path, name: str) -> Path:

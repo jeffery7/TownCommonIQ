@@ -634,18 +634,21 @@ class TestMain:
         assert callable(cli.main)
 
     def test_no_args_exits(self):
-        with patch.object(sys, 'argv', ['prog']):
+        with patch.object(cli.logging_setup, 'configure_logging'), \
+             patch.object(sys, 'argv', ['prog']):
             with pytest.raises(SystemExit):
                 cli.main()
 
     def test_dispatches_list(self):
-        with patch.object(sys, 'argv', ['prog', 'list']), \
+        with patch.object(cli.logging_setup, 'configure_logging'), \
+             patch.object(sys, 'argv', ['prog', 'list']), \
              patch.object(cli, '_cmd_list', return_value=0) as mock_list:
             cli.main()
         mock_list.assert_called_once()
 
     def test_dispatches_generate(self):
-        with patch.object(sys, 'argv', ['prog', 'generate', '--date', '2024-01-01']), \
+        with patch.object(cli.logging_setup, 'configure_logging'), \
+             patch.object(sys, 'argv', ['prog', 'generate', '--date', '2024-01-01']), \
              patch.object(cli, '_cmd_generate', return_value=0) as mock_gen:
             cli.main()
         mock_gen.assert_called_once()

@@ -16,7 +16,7 @@ from typing import Optional
 
 from termcolor import colored as _tc
 
-from towncommoniq import data_store, downloader, transcript
+from towncommoniq import data_store, downloader, logging_setup, transcript
 from towncommoniq.scraper import mytowngovernment
 
 _logger = logging.getLogger(__name__)
@@ -60,6 +60,17 @@ def _ts() -> str:
     """Return a date+time prefix for log lines."""
     stamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     return f'[{stamp}] '
+
+
+def _emit(line: str) -> None:
+    """Print a progress line to stdout and mirror it (ANSI-stripped) to the log file.
+
+    stacklevel=2 attributes the log record to _emit's caller (e.g. _log_start)
+    rather than to _emit itself, so the log's funcName column stays meaningful.
+    """
+    sys.stdout.write(line)
+    sys.stdout.flush()
+    _logger.info(logging_setup.strip_ansi(line).rstrip(), stacklevel=2)
 
 
 def _safe_filename(name: str) -> str:
@@ -252,22 +263,19 @@ def _ensure_transcript(meeting: dict, folder: Path) -> bool:
         return False
     video_id = meeting.get('youtube_id')
     if video_id:
-        sys.stdout.write(f'{_ts()}    {_col("→ fetching YouTube captions...", "cyan")}\n')
-        sys.stdout.flush()
+        _emit(f'{_ts()}    {_col("→ fetching YouTube captions...", "cyan")}\n')
         if transcript.get_captions(video_id, transcript_path):
             return True
     audio_file = transcript.find_audio_file(folder)
     if audio_file:
         msg = f'→ transcribing {audio_file.name} with Whisper (may take several minutes)...'
-        sys.stdout.write(f'{_ts()}    {_col(msg, "cyan")}\n')
-        sys.stdout.flush()
+        _emit(f'{_ts()}    {_col(msg, "cyan")}\n')
         transcript.transcribe_audio(audio_file, transcript_path)
         return True
     recording = transcript.find_recording_file(folder)
     if recording:
         msg = f'→ transcribing {recording.name} with Whisper (may take several minutes)...'
-        sys.stdout.write(f'{_ts()}    {_col(msg, "cyan")}\n')
-        sys.stdout.flush()
+        _emit(f'{_ts()}    {_col(msg, "cyan")}\n')
         transcript.transcribe_audio(recording, transcript_path)
         return True
     return False
@@ -289,8 +297,7 @@ def _ensure_recording(meeting: dict, folder: Path, audio_only: bool = False) -> 
     ext = '.m4a' if audio_only else '.mp4'
     dest = folder / f'{folder.name}_recording{ext}'
     msg = '→ downloading recording (may take a while)...'
-    sys.stdout.write(f'{_ts()}    {_col(msg, "cyan")}\n')
-    sys.stdout.flush()
+    _emit(f'{_ts()}    {_col(msg, "cyan")}\n')
     try:
         transcript.download_recording(video_id, dest, audio_only=audio_only)
     except Exception:
@@ -425,8 +432,7 @@ def _log_start(num: int, total: int, meeting: dict) -> None:
         if status and status != 'held':
             status_tag = _col(f'[{status}]', 'yellow')
             header = f'{header}  {status_tag}'
-    sys.stdout.write(f'{_ts()}{header}\n')
-    sys.stdout.flush()
+    _emit(f'{_ts()}{header}\n')
 
 
 def _colored_field(label: str, mark: str, critical: bool = False) -> str:
@@ -454,9 +460,7 @@ def _log_progress(summary: dict, cancelled: bool = False) -> None:
     The per-meeting header is always printed by archive_all via _log_start.
     """
     if cancelled:
-        sys.stdout.write(
-            f'{_ts()}    {_col("docs:0  agenda:-  trans:-  rec:-", attrs=_ATTR_DARK)}\n',
-        )
+        _emit(f'{_ts()}    {_col("docs:0  agenda:-  trans:-  rec:-", attrs=_ATTR_DARK)}\n')
         return
     docs_new = summary[_KEY_DOCS]
     docs_official = summary.get(_KEY_OFFICIAL_DOCS, _UNKNOWN_DOC_COUNT)
@@ -471,7 +475,7 @@ def _log_progress(summary: dict, cancelled: bool = False) -> None:
     agenda_mark = _status_mark(summary[_KEY_AGENDA], summary.get(_KEY_AGENDA_EXISTS, False))
     trans_mark = _status_mark(summary[_KEY_TRANS], summary.get(_KEY_TRANS_EXISTS, False))
     rec_mark = _status_mark(summary.get(_KEY_RECORDING, 0), summary.get(_KEY_REC_EXISTS, False))
-    sys.stdout.write(
+    _emit(
         f'{_ts()}    {docs_text}  {_colored_field("agenda", agenda_mark, critical=True)}'
         f'  {_colored_field("trans", trans_mark)}  {_colored_field("rec", rec_mark)}\n',
     )

@@ -5,11 +5,14 @@ runs.  Other modules just do `logging.getLogger(__name__)` and log normally —
 as descendants of the 'towncommoniq' logger they inherit its handlers.
 """
 import logging
+import re
 from logging import handlers as logging_handlers
 
 import boto3
 
 from towncommoniq import data_store
+
+_ANSI_ESCAPE_RE = re.compile(r'\x1b\[[0-9;]*m')
 
 LOG_BACKUP_COUNT = 10
 FILE_LOG_LEVEL = logging.DEBUG
@@ -49,10 +52,15 @@ def configure_logging() -> None:
     boto3.set_stream_logger(name='botocore.credentials', level=logging.ERROR)
 
 
+def strip_ansi(text: str) -> str:
+    """Remove ANSI color escape codes so log files stay readable as plain text."""
+    return _ANSI_ESCAPE_RE.sub('', text)
+
+
 def _build_formatter(handler_type: str = _HANDLER_TYPE_LOG) -> logging.Formatter:
     """Return the log line formatter for the given handler type."""
     if handler_type == _HANDLER_TYPE_LOG:
-        fmt_string = '{asctime} {filename:30} {funcName:30} [{levelname:8}] {message}'
+        fmt_string = '{asctime} [{filename:<20}][{funcName:<20}][{levelname:8}] {message}'
     elif handler_type == _HANDLER_TYPE_CONSOLE:
         fmt_string = '{asctime} [{filename}] {funcName} [{levelname}] {message}'
     else:

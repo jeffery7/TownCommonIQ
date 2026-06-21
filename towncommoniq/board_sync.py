@@ -10,6 +10,7 @@ For meetings that have a transcript, the extraction is automatic.
 For meetings without a transcript the entry must be filled in manually.
 """
 import json
+import logging
 import operator
 import re
 import sys
@@ -21,6 +22,8 @@ from openai import OpenAI
 
 from towncommoniq import data_store
 from towncommoniq.minutes_generator import OLLAMA_HOST, _MODEL, _strip_thinking
+
+_logger = logging.getLogger(__name__)
 
 _REORG_RE = re.compile(r'reorgani[sz]', re.IGNORECASE)
 
@@ -201,10 +204,12 @@ def _process_reorg(
     officers = _extract_officers(client, text, known)
     entry = build_history_entry(meeting, officers, all_meetings)
     if verbose:
-        sys.stdout.write(
+        line = (
             f'  {meeting[_KEY_DATE]}  chair={entry[_KEY_CHAIR]}  '
-            f'vice_chair={entry[_KEY_VICE_CHAIR]}  clerk={entry[_KEY_CLERK]}\n',
+            f'vice_chair={entry[_KEY_VICE_CHAIR]}  clerk={entry[_KEY_CLERK]}'
         )
+        sys.stdout.write(f'{line}\n')
+        _logger.info(line)
     return {meeting[_KEY_DATE]: entry}
 
 
