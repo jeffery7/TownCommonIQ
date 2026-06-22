@@ -162,6 +162,41 @@ python -m towncommoniq generate --all
   --no-headless` to watch the Firefox window and see if a Cloudflare
   challenge needs solving manually.
 
+## YouTube Cookies (for IP Blocks)
+
+`archive` fetches transcripts from YouTube (captions first, falling back to
+downloading audio for Whisper). Processing many meetings in one run can
+trigger YouTube's anonymous-IP rate limiting — you'll see
+"YouTube is blocking requests from your IP" / "429 Too Many Requests" in the
+log (`data/<town>/logs/towncommoniq.log`). Authenticating as a logged-in
+user raises that limit substantially. `archive` accepts a cookies file
+for this:
+
+```bash
+python -m towncommoniq archive --all --cookies cookies.txt
+```
+
+To get a cookies file:
+
+1. Log in to [youtube.com](https://www.youtube.com) in your regular browser.
+2. Install a "cookies.txt" export extension — e.g.
+   [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)
+   for Chrome/Edge, or search your browser's extension store for the
+   equivalent (any extension that exports in Netscape cookie format works).
+3. While on youtube.com, use the extension to export cookies for that site
+   to a file, e.g. `cookies.txt`.
+4. Pass that file's path via `--cookies` on `archive`.
+
+The cookies file contains a live login session — treat it like a password
+(don't commit it to git; `*.txt` cookie exports aren't covered by
+`.gitignore` by default, so keep it outside the repo or name it something
+covered by an ignore rule). It will expire eventually (YouTube sessions
+typically last months), at which point re-export a fresh one the same way.
+
+If blocking persists even with cookies, `--proxy` routes requests through a
+different IP instead, e.g. `--proxy socks5://127.0.0.1:1080` via an SSH
+tunnel (`ssh -D 1080 user@host`).
+
 ## Running Tests and Linting
 
 These commands are identical on macOS/Linux and Windows — on Windows, just

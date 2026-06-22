@@ -10,6 +10,7 @@ Sources tried in this priority order:
   4. Download audio from YouTube with yt-dlp and run Whisper locally
      (slow fallback when YouTube has no captions).
 """
+import logging
 import subprocess
 import tempfile
 import time
@@ -20,6 +21,8 @@ from typing import Optional
 import requests
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import CouldNotRetrieveTranscript
+
+_logger = logging.getLogger(__name__)
 
 _CAPTION_DELAY: float = 1.5  # seconds between live YouTube caption requests
 
@@ -105,7 +108,8 @@ def _fetch_youtube_transcript(video_id: str) -> Optional[str]:
     """
     try:
         return _format_transcript(_do_fetch(video_id))
-    except CouldNotRetrieveTranscript:
+    except CouldNotRetrieveTranscript as exc:
+        _logger.info('YouTube Transcript API has no captions for %s: %s', video_id, exc)
         return None
 
 
@@ -231,9 +235,14 @@ def _fetch_ytdlp_captions(video_id: str) -> Optional[str]:
             cmd, capture_output=True, text=True, timeout=_DOWNLOAD_TIMEOUT,
         )
         if proc.returncode != 0:
+            _logger.info(
+                'yt-dlp caption fetch failed for %s (exit %s): %s',
+                video_id, proc.returncode, proc.stderr.strip(),
+            )
             return None
         srt_files = sorted(Path(tmp_dir).glob('*.srt'))
         if not srt_files:
+            _logger.info('No auto-captions available via yt-dlp for %s', video_id)
             return None
         return _parse_srt(srt_files[0].read_text()) or None
 
