@@ -22,6 +22,8 @@ import requests
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import CouldNotRetrieveTranscript
 
+from towncommoniq import data_store, minutes_generator
+
 _logger = logging.getLogger(__name__)
 
 _CAPTION_DELAY: float = 1.5  # seconds between live YouTube caption requests
@@ -146,17 +148,38 @@ def _download_audio(video_id: str, dest: Path) -> None:
     proc.check_returncode()
 
 
+def _whisper_prompt() -> str:
+    """Build a short initial_prompt priming Whisper with known proper nouns.
+
+    Whisper has no inherent knowledge of local names, unlike YouTube's
+    auto-captions which benefit from channel-specific tuning.  Priming it
+    with the current board roster measurably improves how it spells them.
+    """
+    board = data_store.load_board_info()
+    members = ', '.join(board.get('members') or [])
+    roster = f' Board members: {members}.' if members else ''
+    return f'{data_store.TOWN_NAME} Select Board meeting minutes.{roster}'
+
+
 def _run_whisper(audio_path: Path) -> str:
     """Run OpenAI Whisper on a local audio file and return the transcript text.
 
     Whisper is imported inside the function because it is a heavy dependency
     (it downloads model weights on first use) and is only needed as a fallback.
+    Passing language='en' skips Whisper's auto-detection (which can mis-fire
+    on noisy meeting audio), and the same name_corrections.json used for
+    minutes generation is applied here too, so the saved transcript itself
+    has correctly-spelled names rather than only the generated minutes.
     """
     import whisper  # local import — heavy dependency only loaded when needed
     model = whisper.load_model('base')
     # fp16=False avoids NaN logits on GPUs with limited float16 support (e.g. MX550)
-    transcription = model.transcribe(str(audio_path), fp16=False)
-    return transcription['text'].strip()
+    transcription = model.transcribe(
+        str(audio_path), fp16=False, language='en', initial_prompt=_whisper_prompt(),
+    )
+    text = transcription['text'].strip()
+    corrections = minutes_generator._load_name_corrections()
+    return minutes_generator._apply_name_corrections(text, corrections)
 
 
 def find_audio_file(folder: Path) -> Optional[Path]:

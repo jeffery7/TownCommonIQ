@@ -370,11 +370,91 @@ class TestEnsureAgenda:
 
 
 class TestEnsureTranscript:
-    def test_returns_false_when_transcript_exists(self, tmp_path):
+    def test_returns_false_when_transcript_exists_from_youtube(self, tmp_path):
         folder = tmp_path / '2024-03-15_1830'
         folder.mkdir()
         (folder / '2024-03-15_1830_transcript.txt').write_text('cached')
-        assert archiver._ensure_transcript(MEETING, folder) is False
+        (folder / '2024-03-15_1830_transcript_source.txt').write_text('youtube')
+        with patch.object(transcript, 'get_captions') as mock_gc:
+            result = archiver._ensure_transcript(MEETING, folder)
+        mock_gc.assert_not_called()
+        assert result is False
+
+    def test_writes_youtube_source_marker_on_success(self, tmp_path):
+        folder = tmp_path / '2024-03-15_1830'
+        folder.mkdir()
+        with patch.object(transcript, 'get_captions', return_value=True):
+            archiver._ensure_transcript(MEETING, folder)
+        source_path = folder / '2024-03-15_1830_transcript_source.txt'
+        assert source_path.read_text().strip() == 'youtube'
+
+    def test_writes_whisper_source_marker_on_fallback(self, tmp_path):
+        folder = tmp_path / '2024-03-15_1830'
+        folder.mkdir()
+        (folder / 'recording.ogg').write_bytes(b'audio')
+        with patch.object(transcript, 'get_captions', return_value=False), \
+             patch.object(transcript, 'transcribe_audio', return_value='text'):
+            archiver._ensure_transcript(MEETING, folder)
+        source_path = folder / '2024-03-15_1830_transcript_source.txt'
+        assert source_path.read_text().strip() == 'whisper'
+
+    def test_upgrades_unmarked_legacy_transcript_when_youtube_available(self, tmp_path):
+        folder = tmp_path / '2024-03-15_1830'
+        folder.mkdir()
+        transcript_path = folder / '2024-03-15_1830_transcript.txt'
+        transcript_path.write_text('whisper text')
+
+        def fake_get_captions(video_id, dest_path):
+            dest_path.write_text('youtube text')
+            return True
+
+        with patch.object(transcript, 'get_captions', side_effect=fake_get_captions) as mock_gc:
+            result = archiver._ensure_transcript(MEETING, folder)
+        mock_gc.assert_called_once()
+        assert result is True
+        assert transcript_path.read_text() == 'youtube text'
+        backup = folder / '2024-03-15_1830_transcript_whisper.txt'
+        assert backup.read_text() == 'whisper text'
+        source_path = folder / '2024-03-15_1830_transcript_source.txt'
+        assert source_path.read_text().strip() == 'youtube'
+
+    def test_upgrades_whisper_marked_transcript(self, tmp_path):
+        folder = tmp_path / '2024-03-15_1830'
+        folder.mkdir()
+        transcript_path = folder / '2024-03-15_1830_transcript.txt'
+        transcript_path.write_text('whisper text')
+        (folder / '2024-03-15_1830_transcript_source.txt').write_text('whisper')
+
+        def fake_get_captions(video_id, dest_path):
+            dest_path.write_text('youtube text')
+            return True
+
+        with patch.object(transcript, 'get_captions', side_effect=fake_get_captions):
+            result = archiver._ensure_transcript(MEETING, folder)
+        assert result is True
+        assert transcript_path.read_text() == 'youtube text'
+
+    def test_does_not_upgrade_when_youtube_still_unavailable(self, tmp_path):
+        folder = tmp_path / '2024-03-15_1830'
+        folder.mkdir()
+        transcript_path = folder / '2024-03-15_1830_transcript.txt'
+        transcript_path.write_text('whisper text')
+        with patch.object(transcript, 'get_captions', return_value=False) as mock_gc:
+            result = archiver._ensure_transcript(MEETING, folder)
+        mock_gc.assert_called_once()
+        assert result is False
+        assert transcript_path.read_text() == 'whisper text'
+        assert not (folder / '2024-03-15_1830_transcript_whisper.txt').exists()
+
+    def test_does_not_upgrade_when_no_youtube_id(self, tmp_path):
+        folder = tmp_path / '2024-03-15_1830'
+        folder.mkdir()
+        (folder / '2024-03-15_1830_transcript.txt').write_text('whisper text')
+        meeting = {**MEETING, 'youtube_id': None}
+        with patch.object(transcript, 'get_captions') as mock_gc:
+            result = archiver._ensure_transcript(meeting, folder)
+        mock_gc.assert_not_called()
+        assert result is False
 
     def test_uses_youtube_captions_first(self, tmp_path):
         folder = tmp_path / '2024-03-15_1830'

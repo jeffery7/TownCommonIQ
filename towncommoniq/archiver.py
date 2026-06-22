@@ -43,6 +43,9 @@ _TZ_ABBREV_RE = re.compile(r'\s+[A-Z]{2,4}$')
 _DOC_DATE_FMT = '%b %d, %Y %I:%M %p'
 _MEETING_DATE_FMT = '%Y-%m-%d'
 
+_TRANSCRIPT_SOURCE_YOUTUBE = 'youtube'
+_TRANSCRIPT_SOURCE_WHISPER = 'whisper'
+
 
 def _col(text: str, color=None, attrs=None) -> str:
     """Apply ANSI color when stdout is a real interactive terminal.
@@ -249,36 +252,103 @@ def _ensure_agenda(meeting: dict, folder: Path) -> bool:
     return True
 
 
-def _ensure_transcript(meeting: dict, folder: Path) -> bool:
-    """Ensure a transcript file exists for the meeting; return True if created.
+def _transcript_source_path(folder: Path) -> Path:
+    """Return the sidecar file path that records how a transcript was obtained."""
+    return folder / f'{folder.name}_transcript_source.txt'
+
+
+def _read_transcript_source(folder: Path) -> Optional[str]:
+    """Return the recorded transcript source ('youtube'/'whisper'), or None if unknown.
+
+    None covers transcripts archived before this tracking existed — treated as
+    unknown rather than assumed-Whisper so _ensure_transcript knows to retry them.
+    """
+    source_path = _transcript_source_path(folder)
+    if not source_path.exists():
+        return None
+    return source_path.read_text().strip()
+
+
+def _write_transcript_source(folder: Path, source: str) -> None:
+    """Record how the current transcript for this meeting was obtained."""
+    _transcript_source_path(folder).write_text(source)
+
+
+def _upgrade_whisper_transcript(meeting: dict, folder: Path, transcript_path: Path) -> bool:
+    """Try to replace a Whisper-sourced transcript with the real YouTube one.
+
+    Useful after configuring cookies/proxy for a previously IP-blocked run.
+    Fetches into a scratch file first (get_captions short-circuits if its
+    destination already exists), and on success preserves the original
+    Whisper transcript as *_transcript_whisper.txt rather than discarding it.
+    Returns True if the transcript was upgraded.
+    """
+    video_id = meeting.get('youtube_id')
+    if not video_id:
+        return False
+    candidate_path = folder / f'{folder.name}_transcript_youtube_candidate.txt'
+    candidate_path.unlink(missing_ok=True)
+    msg = '→ checking for a YouTube transcript (cached version may be from Whisper)...'
+    _emit(f'{_ts()}    {_col(msg, "cyan")}\n')
+    if not transcript.get_captions(video_id, candidate_path):
+        candidate_path.unlink(missing_ok=True)
+        return False
+    backup_path = folder / f'{folder.name}_transcript_whisper.txt'
+    if not backup_path.exists():
+        transcript_path.replace(backup_path)
+    candidate_path.replace(transcript_path)
+    _write_transcript_source(folder, _TRANSCRIPT_SOURCE_YOUTUBE)
+    done_msg = '→ upgraded to YouTube transcript (Whisper version kept as backup)'
+    _emit(f'{_ts()}    {_col(done_msg, "green")}\n')
+    return True
+
+
+def _fetch_new_transcript(meeting: dict, folder: Path, transcript_path: Path) -> bool:
+    """Create a transcript for a meeting that has none cached yet.
 
     Priority order:
       1. YouTube auto-captions (fast, preferred).
       2. Local .ogg/.m4a audio file → Whisper.
       3. Local recording file (.mp4 etc.) → Whisper.
-    Returns False if already cached or no source is available.
+    Returns False if no source is available.
     """
-    transcript_path = folder / f'{folder.name}_transcript.txt'
-    if transcript_path.exists():
-        return False
     video_id = meeting.get('youtube_id')
     if video_id:
         _emit(f'{_ts()}    {_col("→ fetching YouTube captions...", "cyan")}\n')
         if transcript.get_captions(video_id, transcript_path):
+            _write_transcript_source(folder, _TRANSCRIPT_SOURCE_YOUTUBE)
             return True
     audio_file = transcript.find_audio_file(folder)
     if audio_file:
         msg = f'→ transcribing {audio_file.name} with Whisper (may take several minutes)...'
         _emit(f'{_ts()}    {_col(msg, "cyan")}\n')
         transcript.transcribe_audio(audio_file, transcript_path)
+        _write_transcript_source(folder, _TRANSCRIPT_SOURCE_WHISPER)
         return True
     recording = transcript.find_recording_file(folder)
     if recording:
         msg = f'→ transcribing {recording.name} with Whisper (may take several minutes)...'
         _emit(f'{_ts()}    {_col(msg, "cyan")}\n')
         transcript.transcribe_audio(recording, transcript_path)
+        _write_transcript_source(folder, _TRANSCRIPT_SOURCE_WHISPER)
         return True
     return False
+
+
+def _ensure_transcript(meeting: dict, folder: Path) -> bool:
+    """Ensure a transcript file exists for the meeting; return True if created or upgraded.
+
+    When a cached transcript exists but came from Whisper (or its source is
+    unknown — archived before source tracking existed), tries to upgrade it
+    to the YouTube transcript instead of skipping outright.
+    Returns False if already cached from YouTube or no source is available.
+    """
+    transcript_path = folder / f'{folder.name}_transcript.txt'
+    if not transcript_path.exists():
+        return _fetch_new_transcript(meeting, folder, transcript_path)
+    if _read_transcript_source(folder) == _TRANSCRIPT_SOURCE_YOUTUBE:
+        return False
+    return _upgrade_whisper_transcript(meeting, folder, transcript_path)
 
 
 def _ensure_recording(meeting: dict, folder: Path, audio_only: bool = False) -> bool:

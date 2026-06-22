@@ -249,6 +249,21 @@ class TestDownloadAudio:
         assert 'abc123' in ' '.join(cmd)
 
 
+class TestWhisperPrompt:
+    def test_includes_town_and_members(self):
+        board = {'chair': 'A Chair', 'members': ['Alice Smith', 'Bob Jones']}
+        with patch.object(transcript.data_store, 'load_board_info', return_value=board):
+            prompt = transcript._whisper_prompt()
+        assert transcript.data_store.TOWN_NAME in prompt
+        assert 'Alice Smith' in prompt
+        assert 'Bob Jones' in prompt
+
+    def test_omits_roster_when_no_members(self):
+        with patch.object(transcript.data_store, 'load_board_info', return_value={'members': []}):
+            prompt = transcript._whisper_prompt()
+        assert 'Board members:' not in prompt
+
+
 class TestRunWhisper:
     def test_calls_whisper_and_returns_text(self, tmp_path):
         audio = tmp_path / 'audio.mp3'
@@ -257,9 +272,37 @@ class TestRunWhisper:
         mock_model.transcribe.return_value = {'text': '  whisper output  '}
         mock_whisper = MagicMock()
         mock_whisper.load_model.return_value = mock_model
-        with patch.dict('sys.modules', {'whisper': mock_whisper}):
+        with patch.dict('sys.modules', {'whisper': mock_whisper}), \
+             patch.object(transcript.minutes_generator, '_load_name_corrections', return_value={}):
             result = transcript._run_whisper(audio)
         assert result == 'whisper output'
+
+    def test_passes_language_and_prompt(self, tmp_path):
+        audio = tmp_path / 'audio.mp3'
+        audio.write_text('fake')
+        mock_model = MagicMock()
+        mock_model.transcribe.return_value = {'text': 'text'}
+        mock_whisper = MagicMock()
+        mock_whisper.load_model.return_value = mock_model
+        with patch.dict('sys.modules', {'whisper': mock_whisper}), \
+             patch.object(transcript, '_whisper_prompt', return_value='prompt text'), \
+             patch.object(transcript.minutes_generator, '_load_name_corrections', return_value={}):
+            transcript._run_whisper(audio)
+        kwargs = mock_model.transcribe.call_args.kwargs
+        assert kwargs['language'] == 'en'
+        assert kwargs['initial_prompt'] == 'prompt text'
+
+    def test_applies_name_corrections(self, tmp_path):
+        audio = tmp_path / 'audio.mp3'
+        audio.write_text('fake')
+        mock_model = MagicMock()
+        mock_model.transcribe.return_value = {'text': 'Sha moved to approve.'}
+        mock_whisper = MagicMock()
+        mock_whisper.load_model.return_value = mock_model
+        with patch.dict('sys.modules', {'whisper': mock_whisper}), \
+             patch.object(transcript.minutes_generator, '_load_name_corrections', return_value={'Sha': 'Schaaf'}):
+            result = transcript._run_whisper(audio)
+        assert result == 'Schaaf moved to approve.'
 
 
 class TestGenerateWithWhisper:
