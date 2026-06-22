@@ -13,7 +13,7 @@ class TestLoggingSetup(unittest.TestCase):
         log_formatter = logging_setup._build_formatter('log')
         self.assertEqual(
             log_formatter._style._fmt,
-            '{asctime} {filename:30} {funcName:30} [{levelname:8}] {message}',
+            '{asctime} [{filename:<20}][{funcName:<20}][{levelname:8}] {message}',
         )
 
         console_formatter = logging_setup._build_formatter('console')

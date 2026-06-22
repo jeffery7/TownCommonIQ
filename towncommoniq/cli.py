@@ -384,11 +384,13 @@ def _generate_one(meeting: dict, meetings: list[dict], force: bool = False) -> N
 
     transcript_path = _folder_file(folder, 'transcript.txt')
     _out('  Fetching/generating transcript...')
-    if audio_file:
+    if video_id:
+        # Prefer the YouTube transcript (captions, or Whisper on its audio as a
+        # last resort) over a local recording, even when both are present.
+        transcript_text = transcript.get_transcript(video_id, transcript_path)
+    else:
         _out(f'  Transcribing local audio ({audio_file.name})...')
         transcript_text = transcript.transcribe_audio(audio_file, transcript_path)
-    else:
-        transcript_text = transcript.get_transcript(video_id, transcript_path)
 
     agenda_text = _get_agenda_text(meeting, folder)
     _out('  Calling Ollama...')

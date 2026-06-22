@@ -470,6 +470,20 @@ class TestGenerateOne:
         mock_ta.assert_called_once()
         mock_gen.assert_called_once()
 
+    def test_prefers_youtube_transcript_over_local_audio_when_both_present(self, tmp_path):
+        folder = tmp_path / '2024-03-15_1830'
+        folder.mkdir()
+        (folder / 'meeting.ogg').write_bytes(b'audio')
+        meeting = {**MEETINGS[0], 'folder': str(folder)}
+        assert meeting['youtube_id']
+        with patch('towncommoniq.transcript.get_transcript', return_value='text') as mock_gt, \
+             patch('towncommoniq.transcript.transcribe_audio') as mock_ta, \
+             patch('towncommoniq.cli.generate_minutes') as mock_gen:
+            cli._generate_one(meeting, [meeting])
+        mock_gt.assert_called_once_with(meeting['youtube_id'], folder / f'{folder.name}_transcript.txt')
+        mock_ta.assert_not_called()
+        mock_gen.assert_called_once()
+
     def test_skips_when_draft_exists(self, capsys, tmp_path):
         folder = tmp_path / '2024-03-15_1830'
         folder.mkdir()
