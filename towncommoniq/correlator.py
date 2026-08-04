@@ -5,10 +5,55 @@ upload date falls within _WINDOW_DAYS of the meeting date.  Once a video is
 matched it cannot be used again (each video maps to exactly one meeting).
 """
 from datetime import date
+from types import MappingProxyType
 from typing import Optional
 
+from towncommoniq import data_store
 
 _WINDOW_DAYS = 1
+
+# Hardwick TV posts recordings for several town boards, and matching is by
+# date alone.  A video titled for a different board than the one being synced
+# can get matched onto a real meeting record that happens to share a date,
+# silently attaching the wrong transcript/recording to it (this has happened
+# at least once: a 2026-02-05 Board of Health hearing was matched onto that
+# day's real Select Board meeting). These keywords flag that risk for human
+# review rather than trying to auto-resolve it: some titles that mention
+# another board (e.g. "Finance Committee Meeting") turn out on inspection to
+# be genuine joint sessions, so this must not be used to silently reject a
+# match — only to surface it. Keep in sync with mytowngovernment.BOARD_IDS
+# when adding a newly-tracked board.
+BOARD_TITLE_KEYWORDS = MappingProxyType({
+    'Select Board': ('select board', 'selectmen', 'selectman'),
+    'Board of Health': ('board of health',),
+    'Finance Committee': ('finance committee',),
+})
+_JOINT_INDICATOR = 'joint'
+
+
+def looks_like_wrong_board(title: str, expected_board: str) -> bool:
+    """Return True if a video title suggests it covers a different tracked board.
+
+    Only flags titles that mention another tracked board's name *and* give no
+    indication of the expected board's involvement (no "joint" or the
+    expected board's own keywords in the title). A title with no recognizable
+    board name at all is never flagged. See BOARD_TITLE_KEYWORDS for why this
+    is a for-review signal, not grounds for automatic exclusion of an
+    existing correlation.
+    """
+    lowered = title.lower()
+    if _JOINT_INDICATOR in lowered:
+        return False
+    expected_keywords = BOARD_TITLE_KEYWORDS.get(expected_board, ())
+    if any(keyword in lowered for keyword in expected_keywords):
+        return False
+    other_keywords = (
+        keyword
+        for board, keywords in BOARD_TITLE_KEYWORDS.items()
+        if board != expected_board
+        for keyword in keywords
+    )
+    return any(keyword in lowered for keyword in other_keywords)
 
 
 def _to_date(iso: Optional[str]) -> Optional[date]:
@@ -39,10 +84,16 @@ def _dates_within(
     return abs((parsed_a - parsed_b).days) <= days
 
 
-def correlate(meetings: list[dict], videos: list[dict]) -> list[dict]:
+def correlate(
+    meetings: list[dict], videos: list[dict],
+    expected_board: str = data_store.DEFAULT_BOARD,
+) -> list[dict]:
     """Return meetings with youtube_id populated where a match is found.
 
     Searches within _WINDOW_DAYS of the meeting date. Each video matched once.
+    `expected_board` is the board these meetings belong to (see
+    looks_like_wrong_board) — used only to flag suspicious matches, not to
+    reject them.
     """
     matched_video_ids: set[str] = set()
     correlated = []
@@ -58,6 +109,8 @@ def correlate(meetings: list[dict], videos: list[dict]) -> list[dict]:
         if match:
             updated['youtube_id'] = match['video_id']
             matched_video_ids.add(match['video_id'])
+            if looks_like_wrong_board(match.get('title', ''), expected_board):
+                updated['video_board_mismatch'] = True
         correlated.append(updated)
 
     return correlated

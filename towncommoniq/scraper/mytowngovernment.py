@@ -26,6 +26,30 @@ BOARD_URL = (
 )
 BASE_URL = 'https://www.mytowngovernment.org'
 
+# Hardwick-specific board IDs (the opaque `board=` query param), looked up
+# from https://www.mytowngovernment.org/01031 — each board on that site has
+# its own page under this same URL scheme. Not town-parameterized: only
+# Hardwick is tracked today, and BOARD_URL/CHANNEL_URL are already flat
+# Hardwick constants elsewhere in this codebase.
+BOARD_IDS = MappingProxyType({
+    'Select Board': 'ahNzfnRvd25nb3Zlcm5tZW50LWhychILEgpCb2FyZE1vZGVsGNn3FAw',
+    'Board of Health': 'ahNzfnRvd25nb3Zlcm5tZW50LWhychILEgpCb2FyZE1vZGVsGLO6EQw',
+    'Finance Committee': 'ahNzfnRvd25nb3Zlcm5tZW50LWhychILEgpCb2FyZE1vZGVsGOSqEQw',
+})
+
+
+def board_url(board: str) -> str:
+    """Return the MyTownGovernment board page URL for a tracked board name.
+
+    Raises KeyError (via BOARD_IDS) with a clear message if `board` is not
+    one of the names in BOARD_IDS.
+    """
+    if board not in BOARD_IDS:
+        known = ', '.join(sorted(BOARD_IDS))
+        raise KeyError(f"Unknown board {board!r} — known boards: {known}")
+    return f'{BASE_URL}/board?board={BOARD_IDS[board]}'
+
+
 _HEADERS = MappingProxyType({
     'User-Agent': (
         'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
@@ -50,6 +74,7 @@ _TIME_RE = re.compile(r'(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)(?:\s+\w+)?)')
 
 _TAG_TR = 'tr'
 _TAG_TD = 'td'
+_TAG_TH = 'th'
 _TAG_A = 'a'
 _TAG_TABLE = 'table'
 _ATTR_HREF = 'href'
@@ -250,9 +275,13 @@ def _fetch_soup(url: str) -> Optional[BeautifulSoup]:
 
 
 def _scrape_label_value(soup: BeautifulSoup, label: str) -> str:
-    """Return the text of the cell that follows a two-cell row whose first cell matches label."""
+    """Return the text of the cell that follows a two-cell row whose first cell matches label.
+
+    The label cell may be a <td> (older pages) or a <th scope="row">
+    (current template); the value cell is always a <td>.
+    """
     for row in soup.find_all(_TAG_TR):
-        cells = row.find_all(_TAG_TD)
+        cells = row.find_all([_TAG_TD, _TAG_TH])
         if len(cells) < 2:
             continue
         if cells[0].get_text(strip=True) == label:
@@ -364,15 +393,16 @@ def fetch_agenda_text(meeting_url: str) -> str:
 
     Looks for a table row with the label 'Agenda:' and returns the text of
     the adjacent cell.  Returns an empty string if the page cannot be fetched
-    or has no agenda section.
+    or has no agenda section.  The label cell may be a <td> (older pages) or
+    a <th scope="row"> (current template) — both are matched.
     """
     soup = _fetch_soup(meeting_url)
     if not soup:
         return ''
-    agenda_td = soup.find(_TAG_TD, string=_AGENDA_LABEL_RE)
-    if not agenda_td:
+    agenda_label = soup.find([_TAG_TD, _TAG_TH], string=_AGENDA_LABEL_RE)
+    if not agenda_label:
         return ''
-    content_td = agenda_td.find_next_sibling(_TAG_TD)
+    content_td = agenda_label.find_next_sibling(_TAG_TD)
     if not content_td:
         return ''
     return content_td.get_text(separator='\n', strip=True)

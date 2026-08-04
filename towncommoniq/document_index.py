@@ -20,6 +20,7 @@ metadata records an authoritative 'type' field for each downloaded document.
 """
 import json
 from pathlib import Path
+from typing import Optional
 
 from towncommoniq import data_store
 
@@ -111,16 +112,23 @@ def build_index(meetings: list[dict]) -> dict:
     return index
 
 
-def save_index(index: dict) -> None:
-    """Write the index dict to data/index.json."""
-    _INDEX_JSON.write_text(json.dumps(index, indent=2))
+def save_index(index: dict, index_json: Optional[Path] = None) -> None:
+    """Write the index dict to data/index.json.
+
+    Defaults to the module-level _INDEX_JSON (today's behavior); pass
+    `index_json` (e.g. data_store.paths_for_board(board).board_dir /
+    'index.json') to target another board.
+    """
+    target = _INDEX_JSON if index_json is None else index_json
+    target.write_text(json.dumps(index, indent=2))
 
 
-def load_index() -> dict:
+def load_index(index_json: Optional[Path] = None) -> dict:
     """Load the index from data/index.json; return an empty dict if absent."""
-    if not _INDEX_JSON.exists():
+    target = _INDEX_JSON if index_json is None else index_json
+    if not target.exists():
         return {}
-    return json.loads(_INDEX_JSON.read_text())
+    return json.loads(target.read_text())
 
 
 def missing(index: dict, doc_type: str) -> list:

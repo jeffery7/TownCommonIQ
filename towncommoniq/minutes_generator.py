@@ -12,13 +12,14 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt
 
+from towncommoniq import data_store
+
 _logger = logging.getLogger(__name__)
 
 OLLAMA_HOST = os.environ.get('OLLAMA_HOST', 'http://localhost:11434')
 _MODEL = os.environ.get('OLLAMA_MODEL', 'qwen3:1.7b')
 
-_ROOT = Path(__file__).parent.parent
-_NAME_CORRECTIONS_PATH = _ROOT / 'data' / 'name_corrections.json'
+_NAME_CORRECTIONS_PATH = data_store.DATA_DIR / 'name_corrections.json'
 
 # Stage 1: chunk size for extraction pass (~3K tokens, well within context)
 _CHUNK_CHARS = 12_000

@@ -59,3 +59,70 @@ class TestCorrelate:
     def test_empty_inputs(self):
         assert correlator.correlate([], []) == []
         assert correlator.correlate([MEETING_A], []) == [MEETING_A]
+
+    def test_flags_other_board_match(self):
+        other_board_video = {
+            'video_id': 'v4', 'date': '2024-03-15',
+            'title': 'Board of Health Meeting 3/15',
+        }
+        result = correlator.correlate([MEETING_A], [other_board_video])
+        assert result[0]['youtube_id'] == 'v4'
+        assert result[0]['video_board_mismatch'] is True
+
+    def test_no_mismatch_flag_for_select_board_match(self):
+        result = correlator.correlate([MEETING_A], [VIDEO_SAME_DAY])
+        assert 'video_board_mismatch' not in result[0]
+
+    def test_expected_board_changes_what_counts_as_mismatch(self):
+        board_of_health_video = {
+            'video_id': 'v5', 'date': '2024-03-15',
+            'title': 'Board of Health Meeting 3/15',
+        }
+        result = correlator.correlate(
+            [MEETING_A], [board_of_health_video], expected_board='Board of Health',
+        )
+        assert 'video_board_mismatch' not in result[0]
+
+        result = correlator.correlate(
+            [MEETING_A], [VIDEO_SAME_DAY], expected_board='Board of Health',
+        )
+        assert result[0]['video_board_mismatch'] is True
+
+
+class TestLooksLikeWrongBoard:
+    def test_flags_board_of_health(self):
+        title = 'Board of Health Meeting 3/15'
+        assert correlator.looks_like_wrong_board(title, 'Select Board')
+
+    def test_flags_finance_committee(self):
+        title = 'Finance Committee Meeting 5/21'
+        assert correlator.looks_like_wrong_board(title, 'Select Board')
+
+    def test_does_not_flag_select_board(self):
+        assert not correlator.looks_like_wrong_board('Select Board 3/15', 'Select Board')
+
+    def test_does_not_flag_joint_meeting(self):
+        title = 'Select Board & Finance Committee Meeting'
+        assert not correlator.looks_like_wrong_board(title, 'Select Board')
+
+    def test_does_not_flag_bare_finance_committee_title_if_joint_worded(self):
+        title = 'Joint Meeting with the Finance Committee'
+        assert not correlator.looks_like_wrong_board(title, 'Select Board')
+
+    def test_unrelated_title_not_flagged(self):
+        title = 'Gaming Commission Public Hearing'
+        assert not correlator.looks_like_wrong_board(title, 'Select Board')
+
+    def test_select_board_title_flagged_when_expecting_board_of_health(self):
+        assert correlator.looks_like_wrong_board('Select Board 3/15', 'Board of Health')
+
+    def test_board_of_health_title_not_flagged_when_expecting_itself(self):
+        title = 'Board of Health Meeting 3/15'
+        assert not correlator.looks_like_wrong_board(title, 'Board of Health')
+
+    def test_unknown_expected_board_falls_back_to_no_self_keywords(self):
+        # A board with no entry in BOARD_TITLE_KEYWORDS has nothing that
+        # counts as "its own" title, so any other tracked board's keyword
+        # still flags — but an unrelated title still doesn't.
+        assert correlator.looks_like_wrong_board('Select Board 3/15', 'Planning Board')
+        assert not correlator.looks_like_wrong_board('Planning Board 3/15', 'Planning Board')

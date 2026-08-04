@@ -279,9 +279,12 @@ def _upgrade_whisper_transcript(meeting: dict, folder: Path, transcript_path: Pa
 
     Useful after configuring cookies/proxy for a previously IP-blocked run.
     Fetches into a scratch file first (get_captions short-circuits if its
-    destination already exists), and on success preserves the original
-    Whisper transcript as *_transcript_whisper.txt rather than discarding it.
-    Returns True if the transcript was upgraded.
+    destination already exists). A legacy transcript with no source marker
+    might already be the YouTube version (recorded before source tracking
+    existed) — if the fetched text is identical, just confirm the source
+    instead of creating a spurious "_whisper" backup that was never Whisper
+    output. Only creates the backup when the content actually differs.
+    Returns True if the transcript content changed.
     """
     video_id = meeting.get('youtube_id')
     if not video_id:
@@ -292,6 +295,12 @@ def _upgrade_whisper_transcript(meeting: dict, folder: Path, transcript_path: Pa
     _emit(f'{_ts()}    {_col(msg, "cyan")}\n')
     if not transcript.get_captions(video_id, candidate_path):
         candidate_path.unlink(missing_ok=True)
+        return False
+    if candidate_path.read_text() == transcript_path.read_text():
+        candidate_path.unlink()
+        _write_transcript_source(folder, _TRANSCRIPT_SOURCE_YOUTUBE)
+        msg = '→ confirmed cached transcript already matches YouTube'
+        _emit(f'{_ts()}    {_col(msg, "white", attrs=_ATTR_DARK)}\n')
         return False
     backup_path = folder / f'{folder.name}_transcript_whisper.txt'
     if not backup_path.exists():

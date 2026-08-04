@@ -418,6 +418,25 @@ class TestEnsureTranscript:
         source_path = folder / '2024-03-15_1830_transcript_source.txt'
         assert source_path.read_text().strip() == 'youtube'
 
+    def test_confirms_legacy_transcript_already_from_youtube(self, tmp_path):
+        folder = tmp_path / '2024-03-15_1830'
+        folder.mkdir()
+        transcript_path = folder / '2024-03-15_1830_transcript.txt'
+        transcript_path.write_text('same text either way')
+
+        def fake_get_captions(video_id, dest_path):
+            dest_path.write_text('same text either way')
+            return True
+
+        with patch.object(transcript, 'get_captions', side_effect=fake_get_captions):
+            result = archiver._ensure_transcript(MEETING, folder)
+        assert result is False
+        assert transcript_path.read_text() == 'same text either way'
+        assert not (folder / '2024-03-15_1830_transcript_whisper.txt').exists()
+        assert not (folder / '2024-03-15_1830_transcript_youtube_candidate.txt').exists()
+        source_path = folder / '2024-03-15_1830_transcript_source.txt'
+        assert source_path.read_text().strip() == 'youtube'
+
     def test_upgrades_whisper_marked_transcript(self, tmp_path):
         folder = tmp_path / '2024-03-15_1830'
         folder.mkdir()

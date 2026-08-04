@@ -16,6 +16,7 @@ import logging
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
 import requests
 from pypdf import PdfReader
@@ -65,7 +66,7 @@ def _folder_file(folder: Path, name: str) -> Path:
 
 
 def _add_youtube_only_meetings(
-    meetings: list[dict], videos: list[dict],
+    meetings: list[dict], videos: list[dict], board: str = data_store.DEFAULT_BOARD,
 ) -> list[dict]:
     """Add placeholder meeting records for videos that have no scraped meeting.
 
@@ -75,7 +76,12 @@ def _add_youtube_only_meetings(
     processed by the generate command.
 
     Videos with "test" in the title (e.g. equipment/audio tests) are skipped
-    since they are not real meetings.
+    since they are not real meetings. Videos whose title clearly names a
+    different tracked board (see correlator.looks_like_wrong_board) are also
+    skipped here: unlike an existing correlate() match, there is no real
+    meeting record of `board` for these dates at all, so there is no
+    ambiguity to preserve for review — adding one would fabricate a meeting
+    that never happened.
     """
     existing_dates = {meeting[_KEY_DATE] for meeting in meetings}
     matched_ids = {
@@ -87,26 +93,36 @@ def _add_youtube_only_meetings(
         video for video in videos
         if 'test' not in video.get(_KEY_TITLE, '').lower()
     ]
-    added = 0
-    for video in candidates:
-        if video['video_id'] in matched_ids:
-            continue
-        video_date = video.get(_KEY_DATE)
-        if not video_date or video_date in existing_dates:
-            continue
+    unmatched = [
+        video for video in candidates
+        if video['video_id'] not in matched_ids
+        and video.get(_KEY_DATE) and video[_KEY_DATE] not in existing_dates
+    ]
+    skipped_other_board = [
+        video for video in unmatched
+        if correlator.looks_like_wrong_board(video.get(_KEY_TITLE, ''), board)
+    ]
+    to_add = [video for video in unmatched if video not in skipped_other_board]
+
+    for video in to_add:
         meetings.append({
-            _KEY_DATE: video_date, _KEY_TIME: '', 'location': '',
+            _KEY_DATE: video[_KEY_DATE], _KEY_TIME: '', 'location': '',
             _KEY_STATUS: 'held', _KEY_AGENDA_URL: None, _KEY_MINUTES_URL: None,
             _KEY_YOUTUBE_ID: video['video_id'], _KEY_FOLDER: None,
         })
-        existing_dates.add(video_date)
-        added += 1
-    if added:
-        _out(f'  Added {added} new meetings from YouTube videos')
+    if to_add:
+        _out(f'  Added {len(to_add)} new meetings from YouTube videos')
+    for video in skipped_other_board:
+        _out(
+            f"  Skipped {video.get(_KEY_DATE)} video (looks like a "
+            f"different board than {board!r}): {video.get(_KEY_TITLE)!r}",
+        )
     return meetings
 
 
-def _assign_folders(meetings: list[dict]) -> None:
+def _assign_folders(
+    meetings: list[dict], paths: Optional[data_store.BoardPaths] = None,
+) -> None:
     """Ensure every meeting record has a folder path set, creating it if needed.
 
     Meetings from MyTownGovernment may arrive without a folder because the
@@ -117,7 +133,7 @@ def _assign_folders(meetings: list[dict]) -> None:
     for meeting in meetings:
         if not meeting.get(_KEY_FOLDER):
             folder = data_store.meeting_folder(
-                meeting[_KEY_DATE], meeting.get(_KEY_TIME, ''),
+                meeting[_KEY_DATE], meeting.get(_KEY_TIME, ''), paths=paths,
             )
             meeting[_KEY_FOLDER] = str(folder)
 
@@ -125,11 +141,12 @@ def _assign_folders(meetings: list[dict]) -> None:
 def _try_cache_agenda(meeting: dict) -> bool:
     """Fetch and save the agenda text for one meeting; return True if saved.
 
-    Only runs for meetings that have both a YouTube video (meaning they were
-    held) and a meeting_url to fetch from.  Skips meetings whose agenda file
-    already exists on disk.
+    Runs for any meeting with a folder and a meeting_url — including upcoming
+    meetings with no youtube_id yet, since agendas are posted (and most
+    useful to have cached) before a meeting is held, not after. Skips
+    meetings whose agenda file already exists on disk.
     """
-    if not meeting.get(_KEY_YOUTUBE_ID) or not meeting.get(_KEY_FOLDER):
+    if not meeting.get(_KEY_FOLDER):
         return False
     agenda_path = _folder_file(Path(meeting[_KEY_FOLDER]), 'agenda.txt')
     if agenda_path.exists():
@@ -144,11 +161,13 @@ def _try_cache_agenda(meeting: dict) -> bool:
     return False
 
 
-def _fetch_and_correlate() -> tuple[list[dict], list[dict]]:
-    _out('Fetching meetings from MyTownGovernment.org...')
-    meetings, board_info = mytowngovernment.fetch_meetings()
+def _fetch_and_correlate(
+    board: str, paths: data_store.BoardPaths,
+) -> tuple[list[dict], list[dict]]:
+    _out(f'Fetching {board} meetings from MyTownGovernment.org...')
+    meetings, board_info = mytowngovernment.fetch_meetings(mytowngovernment.board_url(board))
     _out(f'  Found {len(meetings)} meetings')
-    data_store.save_board_info(board_info)
+    data_store.save_board_info(board_info, paths)
     chair = board_info.get('chair') or 'Unknown'
     _out(f'  Board chair: {chair}')
 
@@ -158,15 +177,10 @@ def _fetch_and_correlate() -> tuple[list[dict], list[dict]]:
 
     _out('Correlating...')
     meetings.sort(key=lambda mtg: mtg.get(_KEY_DATE, ''))
-    meetings = correlator.correlate(meetings, videos)
+    meetings = correlator.correlate(meetings, videos, expected_board=board)
     matched = sum(1 for meeting in meetings if meeting.get(_KEY_YOUTUBE_ID))
     _out(f'  Matched {matched}/{len(meetings)} meetings to videos')
     return meetings, videos
-
-
-def _had_minutes(date: str, old_by_date: dict) -> bool:
-    """Return True if the meeting on date already had a minutes URL in old_by_date."""
-    return bool(old_by_date.get(date, {}).get(_KEY_MINUTES_URL))
 
 
 def _notify_new_minutes(old_meetings: list[dict], fresh: list[dict]) -> None:
@@ -176,7 +190,7 @@ def _notify_new_minutes(old_meetings: list[dict], fresh: list[dict]) -> None:
         mtg for mtg in fresh
         if mtg.get(_KEY_DATE)
         and mtg.get(_KEY_MINUTES_URL)
-        and not _had_minutes(mtg.get(_KEY_DATE, ''), old_by_date)
+        and not old_by_date.get(mtg.get(_KEY_DATE, ''), {}).get(_KEY_MINUTES_URL)
     ]
     if not newly_posted:
         return
@@ -189,12 +203,27 @@ def _notify_new_minutes(old_meetings: list[dict], fresh: list[dict]) -> None:
 
 
 def _cmd_sync(args: argparse.Namespace) -> int:
-    old_meetings = data_store.load_meetings()
-    meetings, videos = _fetch_and_correlate()
-    meetings = _add_youtube_only_meetings(meetings, videos)
-    _assign_folders(meetings)
+    board = args.board
+    paths = data_store.paths_for_board(board)
+    old_meetings = data_store.load_meetings(paths)
+    meetings, videos = _fetch_and_correlate(board, paths)
+    # See correlator.looks_like_wrong_board: these are real meeting records
+    # that got a video attached purely by date, where the video's title
+    # suggests it may actually belong to a different tracked board. Printed,
+    # not auto-corrected — verify the transcript before trusting it.
+    mismatches = [mtg for mtg in meetings if mtg.get('video_board_mismatch')]
+    for mismatch in mismatches:
+        _out(
+            f"  WARNING: {mismatch.get(_KEY_DATE)} {board} meeting's "
+            f"matched video (youtube_id={mismatch.get(_KEY_YOUTUBE_ID)}) "
+            f"looks like it may be for a different board — verify before "
+            f"trusting its transcript",
+            err=True,
+        )
+    meetings = _add_youtube_only_meetings(meetings, videos, board)
+    _assign_folders(meetings, paths)
     meetings.sort(key=lambda mtg: mtg.get(_KEY_DATE, ''))
-    data_store.save_meetings(meetings)
+    data_store.save_meetings(meetings, paths)
     data_store.save_youtube(videos)
     saved = sum(_try_cache_agenda(meeting) for meeting in meetings)
     if saved:
@@ -205,8 +234,9 @@ def _cmd_sync(args: argparse.Namespace) -> int:
 
 
 def _cmd_list(args: argparse.Namespace) -> int:
-    meetings = data_store.load_meetings()
-    index = document_index.load_index()
+    paths = data_store.paths_for_board(args.board)
+    meetings = data_store.load_meetings(paths)
+    index = document_index.load_index(paths.board_dir / 'index.json')
     if args.missing:
         meetings = [
             mtg for mtg in meetings
@@ -415,7 +445,8 @@ def _cmd_sync_board(args: argparse.Namespace) -> int:
 
 
 def _cmd_set_attendance(args: argparse.Namespace) -> int:
-    meetings = data_store.load_meetings()
+    paths = data_store.paths_for_board(args.board)
+    meetings = data_store.load_meetings(paths)
     meeting = data_store.find_meeting(meetings, args.date)
     if not meeting:
         _out(f'No meeting found for date: {args.date}', err=True)
@@ -423,7 +454,7 @@ def _cmd_set_attendance(args: argparse.Namespace) -> int:
     absent_str = args.absent or ''
     absent = [name.strip() for name in absent_str.split(',') if name.strip()]
     meeting['members_absent'] = absent
-    data_store.save_meetings(meetings)
+    data_store.save_meetings(meetings, paths)
     _out(f'Set attendance for {args.date}: absent={absent}')
     return 0
 
@@ -464,9 +495,11 @@ def _cmd_sync_town(args: argparse.Namespace) -> int:
 
 def _cmd_compare(args: argparse.Namespace) -> int:
     """Generate a comparison report between the two minutes sources."""
-    meetings = data_store.load_meetings()
+    paths = data_store.paths_for_board()
+    meetings = data_store.load_meetings(paths)
     town_records = data_store.load_town_minutes()
-    report = reporter.compare_report(meetings, town_records)
+    index = document_index.load_index(paths.board_dir / 'index.json')
+    report = reporter.compare_report(meetings, town_records, index)
     _out(report)
     if args.output:
         output_path = Path(args.output)
@@ -516,9 +549,10 @@ def _configure_transport(args: argparse.Namespace) -> None:
 
 def _do_archive_work(
     args: argparse.Namespace, targets: list[dict], all_meetings: list[dict],
+    paths: data_store.BoardPaths,
 ) -> None:
     """Assign folders, run the archive, persist mutations, and print a summary."""
-    _assign_folders(targets)
+    _assign_folders(targets, paths)
     label = 'audio recordings' if args.audio_only else 'video recordings'
     if args.recordings:
         _out(f'Archiving {len(targets)} meeting(s) (including {label})...')
@@ -527,21 +561,24 @@ def _do_archive_work(
     t_start = time.time()
     summary = archiver.archive_all(targets, recordings=args.recordings, audio_only=args.audio_only)
     _archive_report(summary, time.time() - t_start)
-    data_store.save_meetings(all_meetings)
-    document_index.save_index(document_index.build_index(all_meetings))
+    data_store.save_meetings(all_meetings, paths)
+    document_index.save_index(
+        document_index.build_index(all_meetings), paths.board_dir / 'index.json',
+    )
 
 
 def _cmd_archive(args: argparse.Namespace) -> int:
     """Download all available documents and transcripts for meetings."""
     _configure_transport(args)
-    all_meetings = data_store.load_meetings()
+    paths = data_store.paths_for_board(args.board)
+    all_meetings = data_store.load_meetings(paths)
     targets = _get_archive_targets(args, all_meetings)
     if targets is None:
         return 1
     if not targets:
         _out('No meetings to archive.')
         return 0
-    _do_archive_work(args, targets, all_meetings)
+    _do_archive_work(args, targets, all_meetings, paths)
     return 0
 
 
@@ -549,9 +586,18 @@ _ACTION_STORE_TRUE = 'store_true'
 _DATE_METAVAR = 'YYYY-MM-DD'
 
 
+def _add_board_argument(parser: argparse.ArgumentParser) -> None:
+    """Register the shared --board argument (default: Select Board)."""
+    parser.add_argument(
+        '--board', choices=sorted(mytowngovernment.BOARD_IDS), default=data_store.DEFAULT_BOARD,
+        help=f'Which board to operate on (default: {data_store.DEFAULT_BOARD})',
+    )
+
+
 def _add_archive_subparser(sub) -> None:
     """Register the 'archive' subcommand and its arguments."""
     arc_parser = sub.add_parser('archive', help='Download documents and transcripts')
+    _add_board_argument(arc_parser)
     arc_group = arc_parser.add_mutually_exclusive_group(required=True)
     arc_group.add_argument('--date', metavar=_DATE_METAVAR, help='Archive a specific meeting')
     arc_group.add_argument(
@@ -591,6 +637,7 @@ def _add_generate_subparser(sub) -> None:
 def _add_list_subparser(sub) -> None:
     """Register the 'list' subcommand and its arguments."""
     list_parser = sub.add_parser('list', help='List meetings')
+    _add_board_argument(list_parser)
     list_parser.add_argument(
         '--missing', action=_ACTION_STORE_TRUE, help='Show meetings missing official minutes',
     )
@@ -615,12 +662,14 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         description='Generate Hardwick Select Board draft meeting minutes.',
     )
     sub = parser.add_subparsers(dest='command', required=True)
-    sub.add_parser('sync', help='Refresh data from web sources')
+    sync_parser = sub.add_parser('sync', help='Refresh data from web sources')
+    _add_board_argument(sync_parser)
     sub.add_parser('sync-board', help='Build board history from reorganization transcripts')
     _add_list_subparser(sub)
     _add_archive_subparser(sub)
     _add_generate_subparser(sub)
     att_parser = sub.add_parser('set-attendance', help='Record absent board members for a meeting')
+    _add_board_argument(att_parser)
     att_parser.add_argument('--date', metavar=_DATE_METAVAR, required=True, help='Meeting date')
     att_parser.add_argument(
         '--absent', metavar='NAME[,NAME,...]', default='',

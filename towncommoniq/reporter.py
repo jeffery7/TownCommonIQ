@@ -1,12 +1,13 @@
 """Generates a text comparison report between two meeting minutes sources.
 
-Compares what is officially posted on MyTownGovernment.org (minutes_url present)
-against what is listed on the Hardwick town website (hardwick-ma.gov).
+Compares what is officially posted on MyTownGovernment.org against what is listed on the Hardwick
+town website (hardwick-ma.gov). "Officially posted" is read from the document index (index.json,
+built by document_index.build_index() from an actual scan of each meeting's local folder) -- the
+same source list's minutes:Y/N column uses, not a field on the meeting record itself.
 """
 from datetime import date
 
 _KEY_DATE = 'date'
-_KEY_MINUTES_URL = 'minutes_url'
 _REPORT_TITLE = 'Hardwick Select Board Minutes — Source Comparison'
 _DATE_COL_W = 12
 _MTG_COL_W = 3
@@ -18,8 +19,19 @@ _COL_DIVIDER = '-' * _DIVIDER_W
 _YES = 'Y'
 
 
-def _has_official_minutes(meeting: dict) -> bool:
-    return bool(meeting.get(_KEY_MINUTES_URL))
+def _has_official_minutes(meeting: dict, index: dict) -> bool:
+    """Return True if the document index shows a locally-scanned minutes file for this date.
+
+    Previously checked meeting.get('minutes_url'), which the MyTownGovernment.org scraper
+    never actually populates, then briefly checked meeting.get('posted_meeting_files')
+    directly, which isn't present on records from the aggregate meetings.json either (it
+    only lives in per-folder *_meeting.json files). Both made `compare` report nearly every
+    meeting as missing from the official site, including ones confirmed to have real,
+    downloaded minutes (e.g. 2024-11-12). Fixed 2026-08-04 to use the same document_index
+    lookup `list`'s accurate minutes:Y/N column already relies on.
+    """
+    date_str = meeting.get(_KEY_DATE)
+    return bool(date_str) and bool(index.get(date_str, {}).get('minutes'))
 
 
 def _label_by_date(records: list[dict]) -> dict:
@@ -90,12 +102,12 @@ def _section_summary(n_both: int, n_mtg: int, n_town: int) -> list[str]:
     ]
 
 
-def _build_comparison(meetings: list[dict], town_records: list[dict]) -> dict:
+def _build_comparison(meetings: list[dict], town_records: list[dict], index: dict) -> dict:
     """Return a dict with mtg_set, town_by_date, town_set, all_dates, only_mtg, only_town."""
     mtg_set = {
         mtg[_KEY_DATE]
         for mtg in meetings
-        if mtg.get(_KEY_DATE) and _has_official_minutes(mtg)
+        if mtg.get(_KEY_DATE) and _has_official_minutes(mtg, index)
     }
     town_by_date = _label_by_date(town_records)
     town_set = set(town_by_date)
@@ -113,9 +125,9 @@ def _build_comparison(meetings: list[dict], town_records: list[dict]) -> dict:
     }
 
 
-def compare_report(meetings: list[dict], town_records: list[dict]) -> str:
+def compare_report(meetings: list[dict], town_records: list[dict], index: dict) -> str:
     """Return a formatted text comparison of minutes availability on both sites."""
-    comp = _build_comparison(meetings, town_records)
+    comp = _build_comparison(meetings, town_records, index)
     only_mtg = comp['only_mtg']
     only_town = comp['only_town']
     n_both = comp['n_both']

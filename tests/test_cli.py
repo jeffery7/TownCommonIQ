@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from towncommoniq import cli, data_store, document_index
+from towncommoniq.scraper import mytowngovernment
 
 
 MEETINGS = [
@@ -83,6 +84,7 @@ class TestCmdSync:
              patch('towncommoniq.scraper.youtube.fetch_streams', return_value=VIDEOS), \
              patch('towncommoniq.correlator.correlate', return_value=MEETINGS):
             args = MagicMock()
+            args.board = data_store.DEFAULT_BOARD
             result = cli._cmd_sync(args)
         assert result == 0
         assert len(data_store.load_meetings()) > 0
@@ -96,6 +98,7 @@ class TestCmdSync:
              patch('towncommoniq.correlator.correlate', return_value=[]), \
              patch('towncommoniq.scraper.mytowngovernment.fetch_agenda_text', return_value=''):
             args = MagicMock()
+            args.board = data_store.DEFAULT_BOARD
             cli._cmd_sync(args)
         meetings = data_store.load_meetings()
         assert any(m['date'] == '2024-06-01' for m in meetings)
@@ -107,6 +110,7 @@ class TestCmdSync:
              patch('towncommoniq.scraper.youtube.fetch_streams', return_value=[test_video]), \
              patch('towncommoniq.correlator.correlate', return_value=[]):
             args = MagicMock()
+            args.board = data_store.DEFAULT_BOARD
             cli._cmd_sync(args)
         assert data_store.load_meetings() == []
 
@@ -117,10 +121,11 @@ class TestCmdSync:
              patch('towncommoniq.scraper.youtube.fetch_streams', return_value=[no_date_video]), \
              patch('towncommoniq.correlator.correlate', return_value=[]):
             args = MagicMock()
+            args.board = data_store.DEFAULT_BOARD
             cli._cmd_sync(args)
         assert data_store.load_meetings() == []
 
-    def test_sync_skips_agenda_when_no_youtube_id(self, tmp_path):
+    def test_sync_skips_agenda_when_no_meeting_url_or_youtube_id(self, tmp_path):
         folder = tmp_path / 'meetings' / '2024-03-15_1830'
         folder.mkdir(parents=True)
         meeting_no_yt = {**MEETINGS[0], 'folder': str(folder), 'youtube_id': None, 'meeting_url': None}
@@ -130,8 +135,28 @@ class TestCmdSync:
              patch('towncommoniq.correlator.correlate', return_value=[meeting_no_yt]), \
              patch('towncommoniq.scraper.mytowngovernment.fetch_agenda_text') as mock_fetch:
             args = MagicMock()
+            args.board = data_store.DEFAULT_BOARD
             cli._cmd_sync(args)
         mock_fetch.assert_not_called()
+
+    def test_sync_caches_agenda_for_upcoming_meeting_with_no_youtube_id(self, tmp_path):
+        # Upcoming meetings have a posted agenda before they're held, i.e.
+        # before any video exists — caching must not wait on youtube_id.
+        folder = tmp_path / 'meetings' / '2026-07-27_1830'
+        folder.mkdir(parents=True)
+        upcoming = {
+            **MEETINGS[0], 'folder': str(folder), 'youtube_id': None,
+            'status': 'upcoming', 'date': '2026-07-27',
+        }
+        board_info = {'chair': None, 'members': []}
+        with patch('towncommoniq.scraper.mytowngovernment.fetch_meetings', return_value=([upcoming], board_info)), \
+             patch('towncommoniq.scraper.youtube.fetch_streams', return_value=[]), \
+             patch('towncommoniq.correlator.correlate', return_value=[upcoming]), \
+             patch('towncommoniq.scraper.mytowngovernment.fetch_agenda_text', return_value='1. Call to Order'):
+            args = MagicMock()
+            args.board = data_store.DEFAULT_BOARD
+            cli._cmd_sync(args)
+        assert (folder / '2026-07-27_1830_agenda.txt').read_text() == '1. Call to Order'
 
     def test_sync_skips_agenda_when_no_meeting_url(self, tmp_path):
         folder = tmp_path / 'meetings' / '2024-03-15_1830'
@@ -143,6 +168,7 @@ class TestCmdSync:
              patch('towncommoniq.correlator.correlate', return_value=[meeting_no_url]), \
              patch('towncommoniq.scraper.mytowngovernment.fetch_agenda_text') as mock_fetch:
             args = MagicMock()
+            args.board = data_store.DEFAULT_BOARD
             cli._cmd_sync(args)
         mock_fetch.assert_not_called()
 
@@ -157,6 +183,7 @@ class TestCmdSync:
              patch('towncommoniq.correlator.correlate', return_value=[meeting]), \
              patch('towncommoniq.scraper.mytowngovernment.fetch_agenda_text') as mock_fetch:
             args = MagicMock()
+            args.board = data_store.DEFAULT_BOARD
             cli._cmd_sync(args)
         mock_fetch.assert_not_called()
 
@@ -172,8 +199,52 @@ class TestCmdSync:
              patch('towncommoniq.correlator.correlate', return_value=meetings_with_url), \
              patch('towncommoniq.scraper.mytowngovernment.fetch_agenda_text', return_value='1. Call to order\n2. Adjournment'):
             args = MagicMock()
+            args.board = data_store.DEFAULT_BOARD
             cli._cmd_sync(args)
         assert (folder / '2024-03-15_1830_agenda.txt').exists()
+
+    def test_sync_skips_other_board_video_with_no_meeting_record(self):
+        other_board_video = {
+            'video_id': 'zzz222', 'date': '2026-07-21',
+            'title': '07/21/2026 Hardwick, MA. Board of Health Meeting',
+            'url': 'https://yt.be/zzz222',
+        }
+        board_info = {'chair': None, 'members': []}
+        with patch('towncommoniq.scraper.mytowngovernment.fetch_meetings', return_value=([], board_info)), \
+             patch('towncommoniq.scraper.youtube.fetch_streams', return_value=[other_board_video]), \
+             patch('towncommoniq.correlator.correlate', return_value=[]):
+            args = MagicMock()
+            args.board = data_store.DEFAULT_BOARD
+            cli._cmd_sync(args)
+        assert data_store.load_meetings() == []
+
+    def test_sync_keeps_joint_meeting_video_with_no_meeting_record(self):
+        joint_video = {
+            'video_id': 'zzz333', 'date': '2026-05-21',
+            'title': '5/21/2026 Hardwick, MA. Select Board & Finance Committee Meeting',
+            'url': 'https://yt.be/zzz333',
+        }
+        board_info = {'chair': None, 'members': []}
+        with patch('towncommoniq.scraper.mytowngovernment.fetch_meetings', return_value=([], board_info)), \
+             patch('towncommoniq.scraper.youtube.fetch_streams', return_value=[joint_video]), \
+             patch('towncommoniq.correlator.correlate', return_value=[]), \
+             patch('towncommoniq.scraper.mytowngovernment.fetch_agenda_text', return_value=''):
+            args = MagicMock()
+            args.board = data_store.DEFAULT_BOARD
+            cli._cmd_sync(args)
+        assert any(m['date'] == '2026-05-21' for m in data_store.load_meetings())
+
+    def test_sync_warns_on_board_mismatch(self, capsys):
+        mismatched = {**MEETINGS[0], 'video_board_mismatch': True}
+        board_info = {'chair': None, 'members': []}
+        with patch('towncommoniq.scraper.mytowngovernment.fetch_meetings', return_value=([mismatched], board_info)), \
+             patch('towncommoniq.scraper.youtube.fetch_streams', return_value=[]), \
+             patch('towncommoniq.correlator.correlate', return_value=[mismatched]), \
+             patch('towncommoniq.scraper.mytowngovernment.fetch_agenda_text', return_value=''):
+            args = MagicMock()
+            args.board = data_store.DEFAULT_BOARD
+            cli._cmd_sync(args)
+        assert 'WARNING' in capsys.readouterr().err
 
     def test_sync_sorts_meetings_before_correlating(self):
         # Scraper returns meetings newest-first; correlator must receive them
@@ -185,7 +256,7 @@ class TestCmdSync:
         board_info = {'chair': None, 'members': []}
         received_order = []
 
-        def capture_correlate(meetings, videos):
+        def capture_correlate(meetings, videos, expected_board=None):
             received_order.extend(m['date'] for m in meetings)
             return meetings
 
@@ -193,15 +264,40 @@ class TestCmdSync:
              patch('towncommoniq.scraper.youtube.fetch_streams', return_value=[]), \
              patch('towncommoniq.correlator.correlate', side_effect=capture_correlate):
             args = MagicMock()
+            args.board = data_store.DEFAULT_BOARD
             cli._cmd_sync(args)
 
         assert received_order == ['2024-03-15', '2024-03-16']
+
+    def test_non_default_board_writes_to_its_own_subdirectory(self, tmp_path):
+        board_info = {'chair': None, 'members': []}
+        with patch('towncommoniq.scraper.mytowngovernment.fetch_meetings', return_value=([], board_info)), \
+             patch('towncommoniq.scraper.youtube.fetch_streams', return_value=[]), \
+             patch('towncommoniq.correlator.correlate', return_value=[]):
+            args = MagicMock()
+            args.board = 'Board of Health'
+            cli._cmd_sync(args)
+        assert (tmp_path / 'boards' / 'board-of-health' / 'meetings.json').exists()
+        assert not (tmp_path / 'meetings.json').exists()
+
+    def test_non_default_board_requests_its_own_url(self, tmp_path):
+        board_info = {'chair': None, 'members': []}
+        fetch_target = 'towncommoniq.scraper.mytowngovernment.fetch_meetings'
+        with patch(fetch_target, return_value=([], board_info)) as mock_fetch, \
+             patch('towncommoniq.scraper.youtube.fetch_streams', return_value=[]), \
+             patch('towncommoniq.correlator.correlate', return_value=[]):
+            args = MagicMock()
+            args.board = 'Board of Health'
+            cli._cmd_sync(args)
+        requested_url = mock_fetch.call_args[0][0]
+        assert requested_url == mytowngovernment.board_url('Board of Health')
 
 
 class TestCmdList:
     def test_list_all(self, capsys):
         data_store.save_meetings(MEETINGS)
         args = MagicMock()
+        args.board = data_store.DEFAULT_BOARD
         args.missing = False
         args.no_draft = False
         args.has_transcript = False
@@ -211,9 +307,25 @@ class TestCmdList:
         assert '2024-03-15' in out
         assert '2024-04-10' in out
 
+    def test_list_uses_board_scoped_meetings(self, capsys):
+        data_store.save_meetings(MEETINGS)  # default board
+        paths = data_store.paths_for_board('Board of Health')
+        data_store.save_meetings([{'date': '2099-01-01', 'status': 'held'}], paths)
+        args = MagicMock()
+        args.board = 'Board of Health'
+        args.missing = False
+        args.no_draft = False
+        args.has_transcript = False
+        args.undownloaded = False
+        cli._cmd_list(args)
+        out = capsys.readouterr().out
+        assert '2099-01-01' in out
+        assert '2024-03-15' not in out
+
     def test_list_missing_filters(self, capsys):
         data_store.save_meetings(MEETINGS)
         args = MagicMock()
+        args.board = data_store.DEFAULT_BOARD
         args.missing = True
         args.no_draft = False
         args.has_transcript = False
@@ -233,6 +345,7 @@ class TestCmdList:
         index = document_index.build_index(meetings)
         document_index.save_index(index)
         args = MagicMock()
+        args.board = data_store.DEFAULT_BOARD
         args.missing = False
         args.no_draft = True
         args.has_transcript = False
@@ -252,6 +365,7 @@ class TestCmdList:
         index = document_index.build_index(meetings)
         document_index.save_index(index)
         args = MagicMock()
+        args.board = data_store.DEFAULT_BOARD
         args.missing = False
         args.no_draft = False
         args.has_transcript = True
@@ -271,6 +385,7 @@ class TestCmdList:
         index = document_index.build_index(meetings)
         document_index.save_index(index)
         args = MagicMock()
+        args.board = data_store.DEFAULT_BOARD
         args.missing = False
         args.no_draft = False
         args.has_transcript = False
@@ -282,6 +397,7 @@ class TestCmdList:
 
     def test_empty_list(self, capsys):
         args = MagicMock()
+        args.board = data_store.DEFAULT_BOARD
         args.missing = False
         args.no_draft = False
         args.has_transcript = False
@@ -298,6 +414,7 @@ class TestCmdList:
         }
         data_store.save_meetings([meeting])
         args = MagicMock()
+        args.board = data_store.DEFAULT_BOARD
         args.missing = False
         args.no_draft = False
         args.has_transcript = False
@@ -313,6 +430,7 @@ class TestCmdList:
         }
         data_store.save_meetings([meeting])
         args = MagicMock()
+        args.board = data_store.DEFAULT_BOARD
         args.missing = False
         args.no_draft = False
         args.has_transcript = False
@@ -323,6 +441,7 @@ class TestCmdList:
     def test_undownloaded_excludes_meetings_without_minutes_url(self, capsys):
         data_store.save_meetings([MEETINGS[0]])  # MEETINGS[0] has no minutes_url
         args = MagicMock()
+        args.board = data_store.DEFAULT_BOARD
         args.missing = False
         args.no_draft = False
         args.has_transcript = False
@@ -383,7 +502,7 @@ class TestNotifyNewMinutes:
                    return_value=(fresh_with_minutes, board_info)), \
              patch('towncommoniq.scraper.youtube.fetch_streams', return_value=[]), \
              patch('towncommoniq.correlator.correlate', return_value=fresh_with_minutes):
-            cli._cmd_sync(MagicMock())
+            cli._cmd_sync(MagicMock(board=data_store.DEFAULT_BOARD))
         assert 'newly-posted' in capsys.readouterr().out
 
 
@@ -549,6 +668,7 @@ class TestCmdArchive:
         with patch.object(cli.archiver, 'archive_all',
                           return_value={'docs_saved': 2, 'agendas_saved': 1, 'transcripts_saved': 1}) as mock_aa:
             args = MagicMock()
+            args.board = data_store.DEFAULT_BOARD
             args.date = None
             args.all = True
             args.since = None
@@ -563,6 +683,7 @@ class TestCmdArchive:
         with patch.object(cli.archiver, 'archive_all',
                           return_value={'docs_saved': 0, 'agendas_saved': 0, 'transcripts_saved': 0}):
             args = MagicMock()
+            args.board = data_store.DEFAULT_BOARD
             args.date = '2024-03-15'
             args.all = False
             args.since = None
@@ -574,6 +695,7 @@ class TestCmdArchive:
     def test_archive_unknown_date_returns_error(self, capsys):
         data_store.save_meetings([])
         args = MagicMock()
+        args.board = data_store.DEFAULT_BOARD
         args.date = '1999-01-01'
         args.all = False
         args.since = None
@@ -586,6 +708,7 @@ class TestCmdArchive:
         with patch.object(cli.archiver, 'archive_all',
                           return_value={'docs_saved': 0, 'agendas_saved': 0, 'transcripts_saved': 0}) as mock_aa:
             args = MagicMock()
+            args.board = data_store.DEFAULT_BOARD
             args.date = None
             args.all = False
             args.since = '2024-04-01'
@@ -600,6 +723,7 @@ class TestCmdArchive:
     def test_archive_no_targets_returns_zero(self, capsys):
         data_store.save_meetings([])
         args = MagicMock()
+        args.board = data_store.DEFAULT_BOARD
         args.date = None
         args.all = True
         args.since = None
@@ -611,6 +735,7 @@ class TestCmdArchive:
 
     def test_archive_no_flag_returns_error(self, capsys):
         args = MagicMock()
+        args.board = data_store.DEFAULT_BOARD
         args.date = None
         args.all = False
         args.since = None
@@ -621,6 +746,7 @@ class TestCmdArchive:
     def test_archive_with_cookies_configures_client(self, tmp_path):
         data_store.save_meetings([])
         args = MagicMock()
+        args.board = data_store.DEFAULT_BOARD
         args.date = None
         args.all = True
         args.since = None
@@ -633,6 +759,7 @@ class TestCmdArchive:
     def test_archive_with_proxy_configures_proxy(self):
         data_store.save_meetings([])
         args = MagicMock()
+        args.board = data_store.DEFAULT_BOARD
         args.date = None
         args.all = True
         args.since = None
@@ -666,6 +793,34 @@ class TestMain:
              patch.object(cli, '_cmd_generate', return_value=0) as mock_gen:
             cli.main()
         mock_gen.assert_called_once()
+
+    def test_sync_defaults_to_select_board(self):
+        with patch.object(cli.logging_setup, 'configure_logging'), \
+             patch.object(sys, 'argv', ['prog', 'sync']), \
+             patch.object(cli, '_cmd_sync', return_value=0) as mock_sync:
+            cli.main()
+        args = mock_sync.call_args[0][0]
+        assert args.board == data_store.DEFAULT_BOARD
+
+    def test_sync_accepts_valid_board_flag(self):
+        with patch.object(cli.logging_setup, 'configure_logging'), \
+             patch.object(sys, 'argv', ['prog', 'sync', '--board', 'Board of Health']), \
+             patch.object(cli, '_cmd_sync', return_value=0) as mock_sync:
+            cli.main()
+        args = mock_sync.call_args[0][0]
+        assert args.board == 'Board of Health'
+
+    def test_sync_rejects_unknown_board_flag(self):
+        with patch.object(cli.logging_setup, 'configure_logging'), \
+             patch.object(sys, 'argv', ['prog', 'sync', '--board', 'Not A Board']):
+            with pytest.raises(SystemExit):
+                cli.main()
+
+    def test_generate_has_no_board_flag(self):
+        with patch.object(cli.logging_setup, 'configure_logging'), \
+             patch.object(sys, 'argv', ['prog', 'generate', '--all', '--board', 'Board of Health']):
+            with pytest.raises(SystemExit):
+                cli.main()
 
 
 class TestCmdGenerate:
@@ -853,7 +1008,7 @@ class TestDoArchiveWork:
         with patch.object(cli.archiver, 'archive_all', return_value=summary), \
              patch.object(cli.document_index, 'save_index'), \
              patch.object(cli.document_index, 'build_index', return_value={}):
-            cli._do_archive_work(args, targets, list(MEETINGS))
+            cli._do_archive_work(args, targets, list(MEETINGS), data_store.paths_for_board())
 
 
 class TestHasVideoOrAudio:
@@ -961,22 +1116,40 @@ class TestCmdSetAttendance:
     def test_sets_absent_members(self):
         meetings = [{'date': '2024-03-15', 'status': 'held', 'folder': None}]
         data_store.save_meetings(meetings)
-        args = argparse.Namespace(date='2024-03-15', absent='Eric Vollheim,Bob Jones')
+        args = argparse.Namespace(
+            date='2024-03-15', absent='Eric Vollheim,Bob Jones', board=data_store.DEFAULT_BOARD,
+        )
         result = cli._cmd_set_attendance(args)
         assert result == 0
         updated = data_store.load_meetings()
         assert updated[0]['members_absent'] == ['Eric Vollheim', 'Bob Jones']
 
+    def test_uses_board_scoped_meetings(self):
+        paths = data_store.paths_for_board('Finance Committee')
+        data_store.save_meetings(
+            [{'date': '2024-03-15', 'status': 'held', 'folder': None}], paths,
+        )
+        args = argparse.Namespace(
+            date='2024-03-15', absent='Alice', board='Finance Committee',
+        )
+        result = cli._cmd_set_attendance(args)
+        assert result == 0
+        updated = data_store.load_meetings(paths)
+        assert updated[0]['members_absent'] == ['Alice']
+        assert data_store.load_meetings() == []  # default board untouched
+
     def test_returns_error_for_unknown_date(self, capsys):
         data_store.save_meetings([])
-        args = argparse.Namespace(date='2099-01-01', absent='Eric Vollheim')
+        args = argparse.Namespace(
+            date='2099-01-01', absent='Eric Vollheim', board=data_store.DEFAULT_BOARD,
+        )
         result = cli._cmd_set_attendance(args)
         assert result == 1
 
     def test_empty_absent_sets_empty_list(self):
         meetings = [{'date': '2024-03-15', 'status': 'held', 'folder': None}]
         data_store.save_meetings(meetings)
-        args = argparse.Namespace(date='2024-03-15', absent='')
+        args = argparse.Namespace(date='2024-03-15', absent='', board=data_store.DEFAULT_BOARD)
         result = cli._cmd_set_attendance(args)
         assert result == 0
         updated = data_store.load_meetings()
@@ -985,7 +1158,9 @@ class TestCmdSetAttendance:
     def test_strips_whitespace_from_names(self):
         meetings = [{'date': '2024-03-15', 'status': 'held', 'folder': None}]
         data_store.save_meetings(meetings)
-        args = argparse.Namespace(date='2024-03-15', absent=' Eric Vollheim , Bob Jones ')
+        args = argparse.Namespace(
+            date='2024-03-15', absent=' Eric Vollheim , Bob Jones ', board=data_store.DEFAULT_BOARD,
+        )
         cli._cmd_set_attendance(args)
         updated = data_store.load_meetings()
         assert updated[0]['members_absent'] == ['Eric Vollheim', 'Bob Jones']

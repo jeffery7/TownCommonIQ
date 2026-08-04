@@ -16,6 +16,29 @@ This code was primarily created to conduct oversight on the Town of Hardwick Mas
 
 Meetings are pulled from [MyTownGovernment.org](https://www.mytowngovernment.org/board?board=ahNzfnRvd25nb3Zlcm5tZW50LWhychILEgpCb2FyZE1vZGVsGNn3FAw) and correlated with recordings on the [Hardwick TV YouTube channel](https://www.youtube.com/@hardwicktv2394/streams). Transcripts are used together with meeting agendas to generate [MGL Chapter 30A §22](https://malegislature.gov/Laws/GeneralLaws/PartI/TitleIII/Chapter30A/Section22) compliant draft minutes as `.docx` files.
 
+### Other tracked boards
+
+The Hardwick TV YouTube channel posts recordings for several town boards, not
+just Select Board — Board of Health and Finance Committee are also tracked
+(`sync`/`list`/`archive`/`set-attendance` all take `--board "Board of
+Health"` or `--board "Finance Committee"`; default is Select Board). This
+started because a Board of Health video was silently matched onto a real
+Select Board meeting by date alone (see `correlator.looks_like_wrong_board`)
+— tracking those boards for real, instead of just filtering their videos out
+as noise, is the actual fix.
+
+**AI minutes drafting (`generate`) and the minutes-source `compare` stay
+Select Board-only** — that's this project's actual oversight purpose. Those
+commands (plus `sync-board`, `sync-town`) have no `--board` flag and always
+operate on Select Board's data, regardless of what other boards are synced.
+
+To add a new board: look up its opaque `board=<id>` on
+[MyTownGovernment.org/01031](https://www.mytowngovernment.org/01031) (Hardwick's
+zip code), add it to `mytowngovernment.BOARD_IDS`, and add its title keyword(s)
+to `correlator.BOARD_TITLE_KEYWORDS` (used to flag a video whose title suggests
+the wrong board — see the docstring on `looks_like_wrong_board` for why a
+title with no recognizable board name, or the word "joint", is never flagged).
+
 ## Setup
 
 ```bash
@@ -51,6 +74,8 @@ confirmation.
 ```bash
 # Refresh meeting and video data from MyTownGovernment.org and YouTube
 python -m towncommoniq sync
+python -m towncommoniq sync --board "Board of Health"    # sync/list/archive/set-attendance
+python -m towncommoniq sync --board "Finance Committee"  # all take --board (default: Select Board)
 
 # Rebuild board officer history from reorganization meeting transcripts
 python -m towncommoniq sync-board
@@ -119,7 +144,9 @@ towncommoniq/
 │   ├── mytowngovernment.py   # requests + BeautifulSoup → list of meeting dicts
 │   └── youtube.py            # yt-dlp (metadata-only) → list of video dicts
 ├── data_store.py             # read/write data/<town>/*.json and per-meeting
-│                             #   folders under data/<town>/meetings/
+│                             #   folders under data/<town>/meetings/ (Select
+│                             #   Board) or data/<town>/boards/<slug>/ (other
+│                             #   tracked boards) — see paths_for_board()
 ├── correlator.py             # matches videos to meetings by date (±1 day window)
 ├── transcript.py             # YouTube transcript API, falls back to Whisper via yt-dlp
 ├── minutes_generator.py      # Claude API (claude-sonnet-4-6) → .docx via python-docx
@@ -131,19 +158,35 @@ towncommoniq/
 Data is organised by town under `data/<town>/`.  The active town is set via
 the `TOWNCOMMONIQ_TOWN` environment variable (default: `Hardwick`).
 
+Within a town, Select Board keeps the layout below directly under
+`data/<town>/` — that's ~52GB of already-archived data and cannot move. Any
+other tracked board (see `--board` above) gets its own subtree at
+`data/<town>/boards/<slug>/`, mirroring the same internal shape
+(`meetings.json`, `meetings/YYYY-MM-DD_HHMM/...`, etc.) — see
+`data_store.paths_for_board()`. `youtube.json`, `name_corrections.json`, and
+`town_minutes.json` stay at the town level regardless of board: one YouTube
+channel and one name-correction dictionary serve every board.
+
 ```
 data/
 └── Hardwick/                      # one directory per town (TOWNCOMMONIQ_TOWN)
-    ├── meetings.json              # master list of all meetings with status and cross-references
-    ├── name_corrections.json      # a dictionary of name corrections
-    ├── youtube.json               # cached YouTube stream list
-    └── meetings/
-        └── 2024-03-15_1830/                                   # YYYY-MM-DD_HHMM
-            ├── 2024-03-15_1830_agenda.txt                     # fetched agenda text
-            ├── 2024-03-15_1830_meeting.json                   # fetched metadata about meeting
-            ├── 2024-03-15_1830_transcript.txt                 # YouTube or Whisper transcript
-            ├── 2024-03-15_1830_minutes_draft_generated.docx   # generated draft — review before submitting
-            └──[Any other downloaded files]
+    ├── meetings.json              # Select Board's meetings, with status and cross-references
+    ├── board.json                 # Select Board's current chair/clerk/members
+    ├── board_history.json         # Select Board's dated officer history
+    ├── name_corrections.json      # a dictionary of name corrections (town-wide)
+    ├── youtube.json               # cached YouTube stream list (town-wide, all boards)
+    ├── meetings/
+    │   └── 2024-03-15_1830/                                   # Select Board, YYYY-MM-DD_HHMM
+    │       ├── 2024-03-15_1830_agenda.txt                     # fetched agenda text
+    │       ├── 2024-03-15_1830_meeting.json                   # fetched metadata about meeting
+    │       ├── 2024-03-15_1830_transcript.txt                 # YouTube or Whisper transcript
+    │       ├── 2024-03-15_1830_minutes_draft_generated.docx   # generated draft — review before submitting
+    │       └──[Any other downloaded files]
+    └── boards/
+        └── board-of-health/                # data_store._slug("Board of Health")
+            ├── meetings.json                # same shape as Select Board's, scoped to this board
+            └── meetings/
+                └── 2024-03-15_1730/          # same per-meeting layout as above
 ```
 
 ### Meeting record schema (`meetings.json`)

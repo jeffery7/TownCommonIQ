@@ -16,6 +16,39 @@ def isolated_data(tmp_path, monkeypatch):
     (tmp_path / 'meetings').mkdir()
 
 
+class TestPathsForBoard:
+    def test_default_board_uses_top_level_layout(self, tmp_path):
+        paths = data_store.paths_for_board()
+        assert paths.board_dir == tmp_path
+        assert paths.meetings_json == tmp_path / 'meetings.json'
+        assert paths.board_json == tmp_path / 'board.json'
+        assert paths.board_history_json == tmp_path / 'board_history.json'
+
+    def test_select_board_explicit_matches_default(self, tmp_path):
+        assert data_store.paths_for_board('Select Board') == data_store.paths_for_board()
+
+    def test_other_board_gets_subdirectory(self, tmp_path):
+        paths = data_store.paths_for_board('Board of Health')
+        assert paths.board_dir == tmp_path / 'boards' / 'board-of-health'
+        assert paths.meetings_json == tmp_path / 'boards' / 'board-of-health' / 'meetings.json'
+
+    def test_different_boards_get_different_directories(self):
+        health = data_store.paths_for_board('Board of Health')
+        finance = data_store.paths_for_board('Finance Committee')
+        assert health.board_dir != finance.board_dir
+
+
+class TestSlug:
+    def test_lowercases_and_hyphenates(self):
+        assert data_store._slug('Board of Health') == 'board-of-health'
+
+    def test_collapses_punctuation(self):
+        assert data_store._slug('Finance Committee!') == 'finance-committee'
+
+    def test_strips_leading_trailing_hyphens(self):
+        assert data_store._slug('  Select Board  ') == 'select-board'
+
+
 class TestMeetingFolder:
     def test_creates_directory(self, tmp_path):
         folder = data_store.meeting_folder('2024-03-15', '6:30 PM')
@@ -32,6 +65,12 @@ class TestMeetingFolder:
         folder2 = data_store.meeting_folder('2024-03-15', '6:30 PM')
         assert folder1 == folder2
 
+    def test_other_board_uses_its_own_subdirectory(self, tmp_path):
+        paths = data_store.paths_for_board('Board of Health')
+        folder = data_store.meeting_folder('2024-03-15', '6:30 PM', paths=paths)
+        assert folder == tmp_path / 'boards' / 'board-of-health' / 'meetings' / '2024' / '2024-03-15_630'
+        assert folder.exists()
+
 
 class TestLoadSaveMeetings:
     def test_load_returns_empty_when_no_file(self):
@@ -46,6 +85,12 @@ class TestLoadSaveMeetings:
         data_store.save_meetings([{'date': '2024-01-01'}])
         raw = (tmp_path / 'meetings.json').read_text()
         assert json.loads(raw) == [{'date': '2024-01-01'}]
+
+    def test_other_board_writes_to_its_own_file(self, tmp_path):
+        paths = data_store.paths_for_board('Finance Committee')
+        data_store.save_meetings([{'date': '2024-01-01'}], paths=paths)
+        assert data_store.load_meetings(paths=paths) == [{'date': '2024-01-01'}]
+        assert not (tmp_path / 'meetings.json').exists()
 
 
 class TestLoadSaveYoutube:

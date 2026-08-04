@@ -81,6 +81,20 @@ BOARD_HTML = """
 """
 
 
+class TestBoardUrl:
+    def test_select_board_matches_module_constant(self):
+        assert mytowngovernment.board_url('Select Board') == mytowngovernment.BOARD_URL
+
+    def test_other_board_uses_its_own_id(self):
+        url = mytowngovernment.board_url('Board of Health')
+        assert mytowngovernment.BOARD_IDS['Board of Health'] in url
+        assert url != mytowngovernment.BOARD_URL
+
+    def test_unknown_board_raises_key_error(self):
+        with pytest.raises(KeyError):
+            mytowngovernment.board_url('Not A Real Board')
+
+
 class TestAbsolute:
     def test_relative_url_gets_prefixed(self):
         result = mytowngovernment._absolute('/meeting?meeting=abc')
@@ -341,6 +355,23 @@ class TestFetchAgendaText:
         assert 'Call to Order' in text
         assert 'Executive Session' in text
 
+    def test_extracts_agenda_with_th_label(self):
+        # Current MyTownGovernment.org template uses <th scope="row"> for
+        # labels instead of the older <td> — both must work.
+        html = (
+            '<html><body><table>'
+            '<tr><th scope="row">Agenda:</th>'
+            '<td class="agendaTD"><pre>1. Call to Order\n2. Adjournment</pre></td></tr>'
+            '</table></body></html>'
+        )
+        mock_resp = MagicMock()
+        mock_resp.text = html
+        mock_resp.raise_for_status = MagicMock()
+        with patch('requests.get', return_value=mock_resp):
+            text = mytowngovernment.fetch_agenda_text('http://example.com/meeting?meeting=abc')
+        assert 'Call to Order' in text
+        assert 'Adjournment' in text
+
     def test_returns_empty_when_no_agenda_td(self):
         mock_resp = MagicMock()
         mock_resp.text = '<html><body><p>No agenda here</p></body></html>'
@@ -472,6 +503,15 @@ class TestScrapeLabelValue:
     def test_returns_matching_cell(self):
         from bs4 import BeautifulSoup
         html = '<table><tr><td>Scheduled By:</td><td>Town Clerk</td></tr></table>'
+        soup = BeautifulSoup(html, 'html.parser')
+        result = mytowngovernment._scrape_label_value(soup, 'Scheduled By:')
+        assert result == 'Town Clerk'
+
+    def test_returns_matching_cell_with_th_label(self):
+        # Current MyTownGovernment.org template uses <th scope="row"> for
+        # labels instead of the older <td> — both must work.
+        from bs4 import BeautifulSoup
+        html = '<table><tr><th scope="row">Scheduled By:</th><td>Town Clerk</td></tr></table>'
         soup = BeautifulSoup(html, 'html.parser')
         result = mytowngovernment._scrape_label_value(soup, 'Scheduled By:')
         assert result == 'Town Clerk'

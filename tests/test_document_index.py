@@ -193,6 +193,14 @@ class TestSaveLoadIndex:
         parsed = json.loads(path.read_text())
         assert parsed == index
 
+    def test_custom_index_json_round_trip(self, tmp_path):
+        custom_path = tmp_path / 'boards' / 'board-of-health' / 'index.json'
+        custom_path.parent.mkdir(parents=True)
+        index = {'2024-03-15': {'agenda': True}}
+        document_index.save_index(index, index_json=custom_path)
+        assert document_index.load_index(index_json=custom_path) == index
+        assert not document_index._INDEX_JSON.exists()
+
 
 class TestMissing:
     def test_returns_dates_missing_doc_type(self):
