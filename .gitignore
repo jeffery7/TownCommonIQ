@@ -225,6 +225,7 @@ __marimo__/
 
 # Local meeting data cache (recordings, PDFs, transcripts, generated drafts)
 # (no trailing slash: also matches the data symlink -> ../towncommoniq-data)
+_project
 data
 zzz-not-committed/
 
