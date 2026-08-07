@@ -24,8 +24,11 @@ Set to_date to the last date that entry was in effect; null means still current.
 import json
 import os
 import re
+from functools import partial
 from pathlib import Path
-from typing import NamedTuple, Optional
+from typing import Callable, NamedTuple, Optional
+
+from towncommoniq.scraper import hardwick_town
 
 _ROOT = Path(__file__).parent.parent
 TOWN_NAME = os.environ.get('TOWNCOMMONIQ_TOWN', 'Hardwick')
@@ -35,6 +38,8 @@ YOUTUBE_JSON = DATA_DIR / 'youtube.json'
 BOARD_JSON = DATA_DIR / 'board.json'
 BOARD_HISTORY_JSON = DATA_DIR / 'board_history.json'
 TOWN_MINUTES_JSON = DATA_DIR / 'town_minutes.json'
+TOWN_MEETING_FILES_JSON = DATA_DIR / 'town_meeting_files.json'
+TOWN_ADMIN_REPORTS_JSON = DATA_DIR / 'town_admin_reports.json'
 
 # The tool was built single-board (Hardwick's Select Board); DEFAULT_BOARD
 # keeps that board's data at today's existing top-level layout (52GB+
@@ -212,6 +217,131 @@ def save_town_minutes(records: list) -> None:
     TOWN_MINUTES_JSON.write_text(json.dumps(records, indent=2))
 
 
+def load_town_meeting_files() -> list:
+    """Load the cached Town Meeting Files list from town_meeting_files.json."""
+    if not TOWN_MEETING_FILES_JSON.exists():
+        return []
+    return json.loads(TOWN_MEETING_FILES_JSON.read_text())
+
+
+def save_town_meeting_files(records: list) -> None:
+    """Write the Town Meeting Files list to town_meeting_files.json."""
+    _ensure_dirs()
+    TOWN_MEETING_FILES_JSON.write_text(json.dumps(records, indent=2))
+
+
+def load_town_admin_reports() -> list:
+    """Load the cached Town Administrator's Reports list from town_admin_reports.json."""
+    if not TOWN_ADMIN_REPORTS_JSON.exists():
+        return []
+    return json.loads(TOWN_ADMIN_REPORTS_JSON.read_text())
+
+
+def save_town_admin_reports(records: list) -> None:
+    """Write the Town Administrator's Reports list to town_admin_reports.json."""
+    _ensure_dirs()
+    TOWN_ADMIN_REPORTS_JSON.write_text(json.dumps(records, indent=2))
+
+
+def _dated_record_folder(subdir: str, date: str) -> Path:
+    """Return the Path for a dated record's folder under DATA_DIR/subdir, creating it.
+
+    Shared by every sync-town target whose documents don't correspond to an
+    existing meetings.json entry (Town Meeting Files, Town Administrator's
+    Reports, ...) — each gets its own tree, organised by year:
+    <DATA_DIR>/<subdir>/YYYY/YYYY-MM-DD/.
+    """
+    year = date[:4] if date else 'unknown'
+    folder = DATA_DIR / subdir / year / date
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def town_meeting_file_folder(date: str) -> Path:
+    """Return the Path for a Town Meeting Files record's folder, creating it if needed."""
+    return _dated_record_folder('town_meeting_files', date)
+
+
+_KEY_DATE = 'date'
+# report(title) is called for each fetched record with no date parsed from its
+# title (e.g. "2025 Annual Town Report"), so the caller can surface it instead
+# of the record being silently left undownloaded.
+_ReportFn = Callable[[str], None]
+_FoldersFn = Callable[[list[dict], _ReportFn], dict]
+
+
+class SyncTownTarget(NamedTuple):
+    """Bundles everything `cli._cmd_sync_town` needs for one --target choice."""
+
+    label: str
+    listing_url: str
+    load: Callable[[], list]
+    save: Callable[[list], None]
+    folders: _FoldersFn
+
+
+def _select_board_folders(_records: list[dict], _report: _ReportFn) -> dict:
+    """Map each Select Board meeting's date to its existing meetings.json folder.
+
+    Ignores both arguments — folders come from meetings.json, not the fetched
+    records, and every Select Board minutes title carries a full date — but
+    takes them anyway so it matches SyncTownTarget.folders' signature.
+    """
+    meetings = load_meetings()
+    return {
+        mtg[_KEY_DATE]: mtg['folder']
+        for mtg in meetings
+        if mtg.get(_KEY_DATE) and mtg.get('folder')
+    }
+
+
+def _dated_folders(subdir: str, records: list[dict], report: _ReportFn) -> dict:
+    """Map each record's date (or None) to a folder under subdir; report() undated ones too.
+
+    Shared by targets with no meetings.json entry to reuse (Town Meeting
+    Files, Town Administrator's Reports) — each dated record gets its own
+    folder via _dated_record_folder(). Undated titles (e.g. "2025 Annual Town
+    Report" — a real document, just not tied to one meeting date) still get
+    downloaded, into a shared _dated_record_folder(subdir, '') "unknown"
+    bucket keyed by None — matching what `rec.get('date', '')` actually
+    returns for these records, since the 'date' key is always present (as
+    None), so the '' default never applies.
+    """
+    folders = {}
+    for rec in records:
+        date_str = rec.get(_KEY_DATE)
+        folders[date_str] = str(_dated_record_folder(subdir, date_str or ''))
+        if not date_str:
+            report(rec.get('title'))
+    return folders
+
+
+def select_board_sync_target() -> SyncTownTarget:
+    """Return the sync-town target for Select Board minutes (the default)."""
+    return SyncTownTarget(
+        label='minutes', listing_url=hardwick_town.LISTING_URL,
+        load=load_town_minutes, save=save_town_minutes, folders=_select_board_folders,
+    )
+
+
+def town_meeting_files_sync_target() -> SyncTownTarget:
+    """Return the sync-town target for the Town Clerk's Town Meeting Files page."""
+    return SyncTownTarget(
+        label='Town Meeting Files', listing_url=hardwick_town.TOWN_MEETING_FILES_URL,
+        load=load_town_meeting_files, save=save_town_meeting_files,
+        folders=partial(_dated_folders, 'town_meeting_files'),
+    )
+
+
+def town_admin_reports_sync_target() -> SyncTownTarget:
+    """Return the sync-town target for the Town Administrator's Reports page."""
+    return SyncTownTarget(
+        label="Town Administrator's Reports", listing_url=hardwick_town.TOWN_ADMIN_REPORTS_URL,
+        load=load_town_admin_reports, save=save_town_admin_reports,
+        folders=partial(_dated_folders, 'ta_reports'),
+    )
+
+
 def board_info_for_date(date: str, history: list) -> Optional[dict]:
     """Return the board composition that was in effect on the given date, or None.
 
@@ -232,9 +362,6 @@ def board_info_for_date(date: str, history: list) -> Optional[dict]:
         'clerk': matched.get('clerk'),
         'members': matched.get('members', []),
     }
-
-
-_KEY_DATE = 'date'
 
 
 def find_meeting(meetings: list[dict], target_date: str) -> Optional[dict]:

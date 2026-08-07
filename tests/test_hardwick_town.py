@@ -46,6 +46,21 @@ _MEDIA_HTML_PDF_ABS = """
 """
 
 
+class TestListingUrls:
+    def test_town_meeting_files_url_is_distinct_from_select_board(self):
+        assert hardwick_town.TOWN_MEETING_FILES_URL != hardwick_town.LISTING_URL
+
+    def test_town_meeting_files_url_is_on_the_town_site(self):
+        assert hardwick_town.TOWN_MEETING_FILES_URL.startswith(hardwick_town.BASE_URL)
+
+    def test_town_admin_reports_url_is_distinct_from_the_others(self):
+        assert hardwick_town.TOWN_ADMIN_REPORTS_URL != hardwick_town.LISTING_URL
+        assert hardwick_town.TOWN_ADMIN_REPORTS_URL != hardwick_town.TOWN_MEETING_FILES_URL
+
+    def test_town_admin_reports_url_is_on_the_town_site(self):
+        assert hardwick_town.TOWN_ADMIN_REPORTS_URL.startswith(hardwick_town.BASE_URL)
+
+
 class TestParseDateFromTitle:
     def test_standard_date_with_comma(self):
         result = hardwick_town._parse_date_from_title(
@@ -80,6 +95,43 @@ class TestParseDateFromTitle:
     def test_returns_none_for_invalid_day(self):
         result = hardwick_town._parse_date_from_title('Minutes - January 99, 2025')
         assert result is None
+
+    def test_numeric_date_with_leading_zeros(self):
+        result = hardwick_town._parse_date_from_title('11-18-2021 Special Town Meeting Minutes')
+        assert result == '2021-11-18'
+
+    def test_numeric_date_without_leading_zeros(self):
+        result = hardwick_town._parse_date_from_title('04-7-2016 Special Town Meeting')
+        assert result == '2016-04-07'
+
+    def test_numeric_date_single_digit_month_and_day(self):
+        result = hardwick_town._parse_date_from_title('1-14-2016 Special Town Meeting Warrant')
+        assert result == '2016-01-14'
+
+    def test_numeric_date_with_slashes(self):
+        result = hardwick_town._parse_date_from_title('Special Town Meeting Warrant - 10/17/2024')
+        assert result == '2024-10-17'
+
+    def test_numeric_date_two_digit_year(self):
+        result = hardwick_town._parse_date_from_title('Special Town Meeting 04-24-25 Warrant')
+        assert result == '2025-04-24'
+
+    def test_numeric_date_embedded_mid_title(self):
+        result = hardwick_town._parse_date_from_title('Special Town Meeting 01-22-2026 Minutes')
+        assert result == '2026-01-22'
+
+    def test_month_name_preferred_over_numeric_when_both_present(self):
+        result = hardwick_town._parse_date_from_title('June 7, 2025 - AG Approval 01-01-2020')
+        assert result == '2025-06-07'
+
+    def test_returns_none_when_no_date_at_all(self):
+        assert hardwick_town._parse_date_from_title('2025 Annual Town Report') is None
+
+    def test_takes_first_of_multiple_numeric_dates(self):
+        result = hardwick_town._parse_date_from_title(
+            'Notice To Residents 04/24/2025 Approval 11/17/2025',
+        )
+        assert result == '2025-04-24'
 
 
 class TestParseListing:
@@ -320,6 +372,20 @@ class TestDownloadAll:
             hardwick_town.download_all(records, {'2026-03-30': str(tmp_path)})
         assert records[0]['local_filename'] == 'town_march_30.pdf'
 
+    def test_defaults_to_select_board_listing_url(self, tmp_path):
+        ctx, driver = self._make_driver_ctx()
+        with patch.object(hardwick_town, '_create_driver', return_value=ctx), \
+             patch.object(hardwick_town, '_wait_past_cloudflare'):
+            hardwick_town.download_all([], {})
+        driver.get.assert_called_once_with(hardwick_town.LISTING_URL)
+
+    def test_uses_provided_listing_url(self, tmp_path):
+        ctx, driver = self._make_driver_ctx()
+        with patch.object(hardwick_town, '_create_driver', return_value=ctx), \
+             patch.object(hardwick_town, '_wait_past_cloudflare'):
+            hardwick_town.download_all([], {}, listing_url=hardwick_town.TOWN_MEETING_FILES_URL)
+        driver.get.assert_called_once_with(hardwick_town.TOWN_MEETING_FILES_URL)
+
 
 class TestCreateDriver:
     def _make_opts(self):
@@ -456,6 +522,24 @@ class TestFetchMinutesList:
              patch('towncommoniq.scraper.hardwick_town.time.sleep'):
             result = hardwick_town.fetch_minutes_list()
         assert result == []
+
+    def test_defaults_to_select_board_listing_url(self):
+        ctx = self._make_ctx(_LISTING_HTML)
+        driver = ctx.__enter__()
+        with patch.object(hardwick_town, '_create_driver', return_value=ctx), \
+             patch.object(hardwick_town, '_wait_past_cloudflare'), \
+             patch('towncommoniq.scraper.hardwick_town.time.sleep'):
+            hardwick_town.fetch_minutes_list()
+        driver.get.assert_called_once_with(hardwick_town.LISTING_URL)
+
+    def test_uses_provided_listing_url(self):
+        ctx = self._make_ctx(_LISTING_HTML)
+        driver = ctx.__enter__()
+        with patch.object(hardwick_town, '_create_driver', return_value=ctx), \
+             patch.object(hardwick_town, '_wait_past_cloudflare'), \
+             patch('towncommoniq.scraper.hardwick_town.time.sleep'):
+            hardwick_town.fetch_minutes_list(listing_url=hardwick_town.TOWN_MEETING_FILES_URL)
+        driver.get.assert_called_once_with(hardwick_town.TOWN_MEETING_FILES_URL)
 
 
 class TestResolveFileUrls:

@@ -1,9 +1,16 @@
-"""Scrapes meeting minutes from the Hardwick town website (hardwick-ma.gov).
+"""Scrapes document listings from the Hardwick town website (hardwick-ma.gov).
 
 Uses Selenium with Firefox to bypass Cloudflare protection.  Documents are
 downloaded through the browser session (Firefox handles the file download
 directly to a temp directory).  Downloaded files carry FILE_PREFIX to
 distinguish them from mytowngovernment.org files.
+
+The site's "page" templates (Select Board minutes, Town Meeting Files, Town
+Administrator's Reports, etc.) share the same layout — a list of /media/<id>
+links — so every function here takes a listing_url and defaults to
+LISTING_URL (Select Board minutes) for backward compatibility; pass
+TOWN_MEETING_FILES_URL or TOWN_ADMIN_REPORTS_URL to scrape a different
+listing on the same site instead.
 """
 import contextlib
 import logging
@@ -21,11 +28,10 @@ from selenium.common import exceptions as selenium_exceptions
 
 _logger = logging.getLogger(__name__)
 
-LISTING_URL = (
-    'https://www.hardwick-ma.gov'
-    '/administration/page/selectboard-meeting-minutes'
-)
 BASE_URL = 'https://www.hardwick-ma.gov'
+LISTING_URL = f'{BASE_URL}/administration/page/selectboard-meeting-minutes'
+TOWN_MEETING_FILES_URL = f'{BASE_URL}/town-clerk/page/town-meeting-files'
+TOWN_ADMIN_REPORTS_URL = f'{BASE_URL}/administration/page/town-administrators-reports'
 FILE_PREFIX = 'town_'
 
 _CF_WAIT_SECS = 25
@@ -47,6 +53,13 @@ _TITLE_DATE_RE = re.compile(
     re.IGNORECASE,
 )
 _DATE_FORMATS = ('%B %d, %Y', '%B %d %Y', '%b %d, %Y', '%b %d %Y')
+
+# Fallback for titles that give the date numerically instead of by month name,
+# e.g. "11-18-2021 Special Town Meeting Minutes" or "10/17/2024" — common on
+# the Town Meeting Files listing, unlike the Select Board minutes listing
+# this module originally targeted, which always spells the month out.
+_NUMERIC_TITLE_DATE_RE = re.compile(r'\b\d{1,2}[-/]\d{1,2}[-/]\d{2,4}\b')
+_NUMERIC_DATE_FORMATS = ('%m-%d-%Y', '%m/%d/%Y', '%m-%d-%y', '%m/%d/%y')
 _SIZE_SUFFIX_RE = re.compile(r'\s+\d+(?:\.\d+)?\s+(?:KB|MB)\s*$')
 _FILE_EXT_RE = re.compile(r'\.(pdf|docx?|odt)(\?.*)?$', re.IGNORECASE)
 
@@ -60,14 +73,24 @@ _KEY_DOWNLOADED = 'downloaded'
 
 
 def _parse_date_from_title(title: str) -> str | None:
-    """Return ISO date parsed from a title like 'Minutes - March 30, 2026'."""
+    """Return ISO date parsed from a title.
+
+    Tries a spelled-out month first, e.g. 'Minutes - March 30, 2026', then
+    falls back to a numeric date, e.g. '11-18-2021 Special Town Meeting
+    Minutes' or '10/17/2024'. Returns None if neither pattern matches (e.g.
+    an undated title like '2025 Annual Town Report').
+    """
     match = _TITLE_DATE_RE.search(title)
-    if not match:
-        return None
-    raw = match.group(0).replace(',', '')
-    for fmt in _DATE_FORMATS:
-        with contextlib.suppress(ValueError):
-            return datetime.strptime(raw.strip(), fmt).strftime('%Y-%m-%d')
+    if match:
+        raw = match.group(0).replace(',', '')
+        for fmt in _DATE_FORMATS:
+            with contextlib.suppress(ValueError):
+                return datetime.strptime(raw.strip(), fmt).strftime('%Y-%m-%d')
+    match = _NUMERIC_TITLE_DATE_RE.search(title)
+    if match:
+        for fmt in _NUMERIC_DATE_FORMATS:
+            with contextlib.suppress(ValueError):
+                return datetime.strptime(match.group(0), fmt).strftime('%Y-%m-%d')
     return None
 
 
@@ -188,14 +211,18 @@ def download_file(url: str, dest: Path) -> bool:
     return True
 
 
-def fetch_minutes_list(headless: bool = True) -> list[dict]:
-    """Fetch the listing page and return all meeting minutes records.
+def fetch_minutes_list(headless: bool = True, listing_url: str = LISTING_URL) -> list[dict]:
+    """Fetch a listing page and return all document records found on it.
 
     Each record has date, title, media_id, media_url, and placeholders
-    for file_url/filename (resolved later by resolve_file_urls).
+    for file_url/filename (resolved later by resolve_file_urls). Defaults to
+    the Select Board minutes listing; pass listing_url=TOWN_MEETING_FILES_URL
+    (or another page on the same site) to scrape a different listing — the
+    page layout (a list of /media/<id> links) is the same across this site's
+    "page" templates.
     """
     with _create_driver(headless=headless) as driver:
-        driver.get(LISTING_URL)
+        driver.get(listing_url)
         _wait_past_cloudflare(driver)
         time.sleep(_POLL_INTERVAL)
         return _parse_listing(driver.page_source)
@@ -239,17 +266,22 @@ def merge_cached(fresh: list[dict], cached: list[dict]) -> list[dict]:
     return fresh
 
 
-def download_all(town_records: list[dict], folders_by_date: dict, headless: bool = True) -> int:
+def download_all(
+    town_records: list[dict], folders_by_date: dict,
+    headless: bool = True, listing_url: str = LISTING_URL,
+) -> int:
     """Download files for records with a URL that are not yet saved locally.
 
     Uses a browser session (with Cloudflare bypass) to download each file.
     folders_by_date maps date strings to local folder path strings.
-    Returns the number of files successfully downloaded.
+    listing_url is visited first to establish a Cloudflare-cleared session —
+    pass the same listing_url given to fetch_minutes_list. Returns the
+    number of files successfully downloaded.
     """
     count = 0
     with tempfile.TemporaryDirectory() as tmpdir_str:
         with _create_driver(headless, tmpdir_str) as driver:
-            driver.get(LISTING_URL)
+            driver.get(listing_url)
             _wait_past_cloudflare(driver)
             driver.set_page_load_timeout(_REQUEST_TIMEOUT)
             for rec in town_records:

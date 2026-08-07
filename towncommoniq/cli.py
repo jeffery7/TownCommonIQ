@@ -459,24 +459,41 @@ def _cmd_set_attendance(args: argparse.Namespace) -> int:
     return 0
 
 
+_SYNC_TOWN_TARGET_NAMES = ('minutes', 'town-meeting-files', 'ta-reports')
+_SYNC_TOWN_TARGET_FACTORIES = (
+    data_store.select_board_sync_target,
+    data_store.town_meeting_files_sync_target,
+    data_store.town_admin_reports_sync_target,
+)
+
+
 def _cmd_sync_town(args: argparse.Namespace) -> int:
-    """Fetch the town-website minutes listing, resolve file URLs, and download."""
-    headless = not args.no_headless
-    town_records = data_store.load_town_minutes()
-    _out('Fetching minutes listing from hardwick-ma.gov...')
-    fresh = hardwick_town.fetch_minutes_list(headless=headless)
+    """Fetch a hardwick-ma.gov document listing, resolve file URLs, and download.
+
+    --target minutes (default) syncs Select Board minutes into each
+    meeting's existing folder from meetings.json. --target
+    town-meeting-files and --target ta-reports sync documents with no
+    meetings.json entry into their own per-date folder instead; titles with
+    no date parsed (e.g. "2025 Annual Town Report") are reported and skipped
+    rather than guessed at. See data_store.SyncTownTarget.
+    """
+    target_factories = dict(zip(_SYNC_TOWN_TARGET_NAMES, _SYNC_TOWN_TARGET_FACTORIES))
+    target = target_factories[args.target]()
+    town_records = target.load()
+    _out(f'Fetching {target.label} listing from hardwick-ma.gov...')
+    fresh = hardwick_town.fetch_minutes_list(
+        headless=not args.no_headless, listing_url=target.listing_url,
+    )
     _out(f'  Found {len(fresh)} records')
     town_records = hardwick_town.merge_cached(fresh, town_records)
     unresolved = [rec for rec in town_records if not rec.get('file_url')]
     if unresolved:
         _out(f'  Resolving {len(unresolved)} file URL(s) via browser...')
-        hardwick_town.resolve_file_urls(town_records, headless=headless)
-    meetings = data_store.load_meetings()
-    folders = {
-        mtg[_KEY_DATE]: mtg[_KEY_FOLDER]
-        for mtg in meetings
-        if mtg.get(_KEY_DATE) and mtg.get(_KEY_FOLDER)
-    }
+        hardwick_town.resolve_file_urls(town_records, headless=not args.no_headless)
+    folders = target.folders(
+        town_records,
+        lambda title: _out(f'  Skipping (no date found in title): {title!r}', err=True),
+    )
     to_download = any(
         not rec.get('downloaded') and rec.get('file_url')
         and folders.get(rec.get('date', '')) and rec.get('filename')
@@ -484,12 +501,14 @@ def _cmd_sync_town(args: argparse.Namespace) -> int:
     )
     if to_download:
         _out('  Downloading file(s) via browser...')
-        count = hardwick_town.download_all(town_records, folders, headless=headless)
+        count = hardwick_town.download_all(
+            town_records, folders, headless=not args.no_headless, listing_url=target.listing_url,
+        )
     else:
         count = 0
-    data_store.save_town_minutes(town_records)
+    target.save(town_records)
     _out(f'  Downloaded {count} file(s).')
-    _out('Town website sync complete.')
+    _out(f'{target.label} sync complete.')
     return 0
 
 
@@ -675,7 +694,15 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         '--absent', metavar='NAME[,NAME,...]', default='',
         help='Comma-separated list of absent board members',
     )
-    town_parser = sub.add_parser('sync-town', help='Sync minutes from hardwick-ma.gov')
+    town_parser = sub.add_parser('sync-town', help='Sync documents from hardwick-ma.gov')
+    town_parser.add_argument(
+        '--target', choices=_SYNC_TOWN_TARGET_NAMES, default=_SYNC_TOWN_TARGET_NAMES[0],
+        help=(
+            "'minutes' (default) syncs Select Board minutes; "
+            "'town-meeting-files' syncs Town Meeting warrants/minutes/ballot questions; "
+            "'ta-reports' syncs Town Administrator's Reports"
+        ),
+    )
     town_parser.add_argument(
         '--no-headless', action=_ACTION_STORE_TRUE, dest='no_headless',
         help='Show the Firefox browser window (useful when Cloudflare challenges occur)',

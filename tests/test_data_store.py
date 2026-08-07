@@ -13,6 +13,8 @@ def isolated_data(tmp_path, monkeypatch):
     monkeypatch.setattr(data_store, 'BOARD_JSON', tmp_path / 'board.json')
     monkeypatch.setattr(data_store, 'BOARD_HISTORY_JSON', tmp_path / 'board_history.json')
     monkeypatch.setattr(data_store, 'TOWN_MINUTES_JSON', tmp_path / 'town_minutes.json')
+    monkeypatch.setattr(data_store, 'TOWN_MEETING_FILES_JSON', tmp_path / 'town_meeting_files.json')
+    monkeypatch.setattr(data_store, 'TOWN_ADMIN_REPORTS_JSON', tmp_path / 'town_admin_reports.json')
     (tmp_path / 'meetings').mkdir()
 
 
@@ -202,6 +204,129 @@ class TestTownMinutes:
         records = [{'media_id': '8601', 'date': '2026-03-30', 'file_url': None}]
         data_store.save_town_minutes(records)
         assert data_store.load_town_minutes() == records
+
+
+class TestTownMeetingFiles:
+    def test_load_returns_empty_when_no_file(self):
+        assert data_store.load_town_meeting_files() == []
+
+    def test_roundtrip(self):
+        records = [{'media_id': '9046', 'date': '2026-08-12', 'file_url': None}]
+        data_store.save_town_meeting_files(records)
+        assert data_store.load_town_meeting_files() == records
+
+
+class TestTownAdminReports:
+    def test_load_returns_empty_when_no_file(self):
+        assert data_store.load_town_admin_reports() == []
+
+    def test_roundtrip(self):
+        records = [{'media_id': '9036', 'date': '2026-07-27', 'file_url': None}]
+        data_store.save_town_admin_reports(records)
+        assert data_store.load_town_admin_reports() == records
+
+
+class TestDatedRecordFolder:
+    def test_creates_directory(self, tmp_path):
+        folder = data_store._dated_record_folder('town_meeting_files', '2021-06-19')
+        assert folder.exists()
+        assert folder.is_dir()
+
+    def test_folder_path_organised_by_year_and_subdir(self, tmp_path):
+        folder = data_store._dated_record_folder('ta_reports', '2021-06-19')
+        assert folder == tmp_path / 'ta_reports' / '2021' / '2021-06-19'
+
+    def test_idempotent(self):
+        folder1 = data_store._dated_record_folder('town_meeting_files', '2021-06-19')
+        folder2 = data_store._dated_record_folder('town_meeting_files', '2021-06-19')
+        assert folder1 == folder2
+
+    def test_empty_date_uses_unknown_bucket(self, tmp_path):
+        folder = data_store._dated_record_folder('town_meeting_files', '')
+        assert folder == tmp_path / 'town_meeting_files' / 'unknown' / ''
+
+
+class TestTownMeetingFileFolder:
+    def test_delegates_to_dated_record_folder(self, tmp_path):
+        folder = data_store.town_meeting_file_folder('2021-06-19')
+        assert folder == tmp_path / 'town_meeting_files' / '2021' / '2021-06-19'
+
+
+class TestSelectBoardFolders:
+    def test_maps_dated_meetings_to_their_folders(self):
+        data_store.save_meetings([{'date': '2024-03-15', 'folder': '/some/path'}])
+        folders = data_store._select_board_folders([], lambda title: None)
+        assert folders == {'2024-03-15': '/some/path'}
+
+    def test_ignores_meetings_missing_date_or_folder(self):
+        data_store.save_meetings([{'date': '2024-03-15'}, {'folder': '/some/path'}])
+        folders = data_store._select_board_folders([], lambda title: None)
+        assert folders == {}
+
+    def test_ignores_its_records_argument(self):
+        data_store.save_meetings([{'date': '2024-03-15', 'folder': '/some/path'}])
+        folders = data_store._select_board_folders(
+            [{'date': '2099-01-01', 'title': 'irrelevant'}], lambda title: None,
+        )
+        assert folders == {'2024-03-15': '/some/path'}
+
+    def test_never_reports(self):
+        data_store.save_meetings([])
+        reported = []
+        data_store._select_board_folders([], reported.append)
+        assert reported == []
+
+
+class TestDatedFolders:
+    def test_maps_dated_records_to_their_own_folder(self, tmp_path):
+        records = [{'date': '2021-06-19', 'title': 'Annual Town Meeting Minutes'}]
+        folders = data_store._dated_folders('town_meeting_files', records, lambda title: None)
+        assert folders == {'2021-06-19': str(tmp_path / 'town_meeting_files' / '2021' / '2021-06-19')}
+
+    def test_undated_record_gets_unknown_bucket_not_dropped(self, tmp_path):
+        records = [{'date': None, 'title': '2025 Annual Town Report'}]
+        folders = data_store._dated_folders('town_meeting_files', records, lambda title: None)
+        assert folders == {None: str(tmp_path / 'town_meeting_files' / 'unknown')}
+
+    def test_reports_only_undated_records(self):
+        records = [
+            {'date': '2021-06-19', 'title': 'Annual Town Meeting Minutes'},
+            {'date': None, 'title': '2025 Annual Town Report'},
+        ]
+        reported = []
+        data_store._dated_folders('town_meeting_files', records, reported.append)
+        assert reported == ['2025 Annual Town Report']
+
+    def test_uses_given_subdir(self, tmp_path):
+        records = [{'date': '2026-07-27', 'title': '7-27-2026 Administrator Report'}]
+        folders = data_store._dated_folders('ta_reports', records, lambda title: None)
+        assert folders == {'2026-07-27': str(tmp_path / 'ta_reports' / '2026' / '2026-07-27')}
+
+
+class TestSyncTownTargets:
+    def test_select_board_target_fields(self):
+        target = data_store.select_board_sync_target()
+        assert target.label == 'minutes'
+        assert target.listing_url == data_store.hardwick_town.LISTING_URL
+        assert target.load == data_store.load_town_minutes
+        assert target.save == data_store.save_town_minutes
+        assert target.folders == data_store._select_board_folders
+
+    def test_town_meeting_files_target_fields(self):
+        target = data_store.town_meeting_files_sync_target()
+        assert target.label == 'Town Meeting Files'
+        assert target.listing_url == data_store.hardwick_town.TOWN_MEETING_FILES_URL
+        assert target.load == data_store.load_town_meeting_files
+        assert target.save == data_store.save_town_meeting_files
+        assert (target.folders.func, target.folders.args) == (data_store._dated_folders, ('town_meeting_files',))
+
+    def test_town_admin_reports_target_fields(self):
+        target = data_store.town_admin_reports_sync_target()
+        assert target.label == "Town Administrator's Reports"
+        assert target.listing_url == data_store.hardwick_town.TOWN_ADMIN_REPORTS_URL
+        assert target.load == data_store.load_town_admin_reports
+        assert target.save == data_store.save_town_admin_reports
+        assert (target.folders.func, target.folders.args) == (data_store._dated_folders, ('ta_reports',))
 
     def test_sorted_by_date(self):
         meetings = [{'date': '2024-03-01'}, {'date': '2024-01-01'}]

@@ -45,6 +45,9 @@ def isolated_data(tmp_path, monkeypatch):
     monkeypatch.setattr(data_store, 'MEETINGS_JSON', tmp_path / 'meetings.json')
     monkeypatch.setattr(data_store, 'YOUTUBE_JSON', tmp_path / 'youtube.json')
     monkeypatch.setattr(data_store, 'BOARD_JSON', tmp_path / 'board.json')
+    monkeypatch.setattr(data_store, 'TOWN_MINUTES_JSON', tmp_path / 'town_minutes.json')
+    monkeypatch.setattr(data_store, 'TOWN_MEETING_FILES_JSON', tmp_path / 'town_meeting_files.json')
+    monkeypatch.setattr(data_store, 'TOWN_ADMIN_REPORTS_JSON', tmp_path / 'town_admin_reports.json')
     monkeypatch.setattr(document_index, '_INDEX_JSON', tmp_path / 'index.json')
     (tmp_path / 'meetings').mkdir()
 
@@ -810,6 +813,36 @@ class TestMain:
         args = mock_sync.call_args[0][0]
         assert args.board == 'Board of Health'
 
+    def test_sync_town_defaults_to_minutes_target(self):
+        with patch.object(cli.logging_setup, 'configure_logging'), \
+             patch.object(sys, 'argv', ['prog', 'sync-town']), \
+             patch.object(cli, '_cmd_sync_town', return_value=0) as mock_sync_town:
+            cli.main()
+        args = mock_sync_town.call_args[0][0]
+        assert args.target == 'minutes'
+
+    def test_sync_town_accepts_town_meeting_files_target(self):
+        with patch.object(cli.logging_setup, 'configure_logging'), \
+             patch.object(sys, 'argv', ['prog', 'sync-town', '--target', 'town-meeting-files']), \
+             patch.object(cli, '_cmd_sync_town', return_value=0) as mock_sync_town:
+            cli.main()
+        args = mock_sync_town.call_args[0][0]
+        assert args.target == 'town-meeting-files'
+
+    def test_sync_town_accepts_ta_reports_target(self):
+        with patch.object(cli.logging_setup, 'configure_logging'), \
+             patch.object(sys, 'argv', ['prog', 'sync-town', '--target', 'ta-reports']), \
+             patch.object(cli, '_cmd_sync_town', return_value=0) as mock_sync_town:
+            cli.main()
+        args = mock_sync_town.call_args[0][0]
+        assert args.target == 'ta-reports'
+
+    def test_sync_town_rejects_invalid_target(self):
+        with patch.object(cli.logging_setup, 'configure_logging'), \
+             patch.object(sys, 'argv', ['prog', 'sync-town', '--target', 'bogus']), \
+             pytest.raises(SystemExit):
+            cli.main()
+
     def test_sync_rejects_unknown_board_flag(self):
         with patch.object(cli.logging_setup, 'configure_logging'), \
              patch.object(sys, 'argv', ['prog', 'sync', '--board', 'Not A Board']):
@@ -1066,15 +1099,16 @@ class TestCmdSyncTown:
                 'filename': 'file.pdf', 'downloaded': False,
             },
         ]
-        args = argparse.Namespace(no_headless=False)
+        args = argparse.Namespace(no_headless=False, target='minutes')
         with patch.object(cli.hardwick_town, 'fetch_minutes_list', return_value=fresh_records), \
              patch.object(cli.hardwick_town, 'merge_cached', return_value=fresh_records), \
              patch.object(cli.hardwick_town, 'resolve_file_urls'), \
-             patch.object(cli.hardwick_town, 'download_all', return_value=1):
+             patch.object(cli.hardwick_town, 'download_all', return_value=1) as mock_download:
             result = cli._cmd_sync_town(args)
         assert result == 0
         saved = data_store.load_town_minutes()
         assert len(saved) == 1
+        assert mock_download.call_args.kwargs['listing_url'] == cli.hardwick_town.LISTING_URL
 
     def test_sync_town_resolves_unresolved_urls(self):
         data_store.save_meetings([])
@@ -1085,13 +1119,97 @@ class TestCmdSyncTown:
                 'file_url': None, 'filename': None, 'downloaded': False,
             },
         ]
-        args = argparse.Namespace(no_headless=False)
+        args = argparse.Namespace(no_headless=False, target='minutes')
         with patch.object(cli.hardwick_town, 'fetch_minutes_list', return_value=fresh_records), \
              patch.object(cli.hardwick_town, 'merge_cached', return_value=fresh_records), \
              patch.object(cli.hardwick_town, 'resolve_file_urls') as mock_resolve, \
              patch.object(cli.hardwick_town, 'download_all', return_value=0):
             cli._cmd_sync_town(args)
         mock_resolve.assert_called_once()
+
+    def test_sync_town_meeting_files_saves_records(self):
+        fresh_records = [
+            {
+                'date': '2021-06-19', 'title': 'June 19, 2021 Annual Town Meeting Minutes',
+                'media_id': '1234', 'media_url': 'http://town.example.com/media/1234',
+                'file_url': 'http://town.example.com/file.pdf',
+                'filename': 'file.pdf', 'downloaded': False,
+            },
+        ]
+        args = argparse.Namespace(no_headless=False, target='town-meeting-files')
+        with patch.object(cli.hardwick_town, 'fetch_minutes_list', return_value=fresh_records), \
+             patch.object(cli.hardwick_town, 'merge_cached', return_value=fresh_records), \
+             patch.object(cli.hardwick_town, 'resolve_file_urls'), \
+             patch.object(cli.hardwick_town, 'download_all', return_value=1) as mock_download:
+            result = cli._cmd_sync_town(args)
+        assert result == 0
+        saved = data_store.load_town_meeting_files()
+        assert len(saved) == 1
+        # Downloaded via a per-record folder, not one sourced from meetings.json.
+        call_folders = mock_download.call_args.args[1]
+        assert call_folders == {'2021-06-19': str(data_store.town_meeting_file_folder('2021-06-19'))}
+        assert mock_download.call_args.kwargs['listing_url'] == cli.hardwick_town.TOWN_MEETING_FILES_URL
+
+    def test_sync_town_meeting_files_resolves_unresolved_urls(self):
+        fresh_records = [
+            {
+                'date': '2021-06-19', 'title': 'Minutes',
+                'media_id': '1234', 'media_url': 'http://x.com/media/1234',
+                'file_url': None, 'filename': None, 'downloaded': False,
+            },
+        ]
+        args = argparse.Namespace(no_headless=False, target='town-meeting-files')
+        with patch.object(cli.hardwick_town, 'fetch_minutes_list', return_value=fresh_records), \
+             patch.object(cli.hardwick_town, 'merge_cached', return_value=fresh_records), \
+             patch.object(cli.hardwick_town, 'resolve_file_urls') as mock_resolve, \
+             patch.object(cli.hardwick_town, 'download_all', return_value=0):
+            cli._cmd_sync_town(args)
+        mock_resolve.assert_called_once()
+
+    def test_sync_town_meeting_files_downloads_undated_records_too(self, capsys):
+        """Undated titles (e.g. "2025 Annual Town Report") are real documents —
+        they still get downloaded, into a shared "unknown" bucket, not silently
+        dropped. The undated warning is still printed alongside the download."""
+        fresh_records = [
+            {
+                'date': None, 'title': '2025 Annual Town Report',
+                'media_id': '5678', 'media_url': 'http://x.com/media/5678',
+                'file_url': 'http://x.com/file.pdf', 'filename': 'file.pdf', 'downloaded': False,
+            },
+        ]
+        args = argparse.Namespace(no_headless=False, target='town-meeting-files')
+        with patch.object(cli.hardwick_town, 'fetch_minutes_list', return_value=fresh_records), \
+             patch.object(cli.hardwick_town, 'merge_cached', return_value=fresh_records), \
+             patch.object(cli.hardwick_town, 'resolve_file_urls'), \
+             patch.object(cli.hardwick_town, 'download_all', return_value=1) as mock_download:
+            result = cli._cmd_sync_town(args)
+        assert result == 0
+        mock_download.assert_called_once()
+        call_folders = mock_download.call_args.args[1]
+        assert call_folders == {None: str(data_store.town_meeting_file_folder(''))}
+        assert 'Annual Town Report' in capsys.readouterr().err
+
+    def test_sync_town_admin_reports_saves_records(self):
+        fresh_records = [
+            {
+                'date': '2026-07-27', 'title': '7-27-2026 Administrator Report',
+                'media_id': '9036', 'media_url': 'http://town.example.com/media/9036',
+                'file_url': 'http://town.example.com/file.pdf',
+                'filename': 'file.pdf', 'downloaded': False,
+            },
+        ]
+        args = argparse.Namespace(no_headless=False, target='ta-reports')
+        with patch.object(cli.hardwick_town, 'fetch_minutes_list', return_value=fresh_records), \
+             patch.object(cli.hardwick_town, 'merge_cached', return_value=fresh_records), \
+             patch.object(cli.hardwick_town, 'resolve_file_urls'), \
+             patch.object(cli.hardwick_town, 'download_all', return_value=1) as mock_download:
+            result = cli._cmd_sync_town(args)
+        assert result == 0
+        saved = data_store.load_town_admin_reports()
+        assert len(saved) == 1
+        call_folders = mock_download.call_args.args[1]
+        assert call_folders == {'2026-07-27': str(data_store._dated_record_folder('ta_reports', '2026-07-27'))}
+        assert mock_download.call_args.kwargs['listing_url'] == cli.hardwick_town.TOWN_ADMIN_REPORTS_URL
 
 
 class TestCmdCompare:
