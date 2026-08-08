@@ -40,6 +40,7 @@ BOARD_HISTORY_JSON = DATA_DIR / 'board_history.json'
 TOWN_MINUTES_JSON = DATA_DIR / 'town_minutes.json'
 TOWN_MEETING_FILES_JSON = DATA_DIR / 'town_meeting_files.json'
 TOWN_ADMIN_REPORTS_JSON = DATA_DIR / 'town_admin_reports.json'
+WPCF_UPDATES_JSON = DATA_DIR / 'wpcf_updates.json'
 
 # The tool was built single-board (Hardwick's Select Board); DEFAULT_BOARD
 # keeps that board's data at today's existing top-level layout (52GB+
@@ -211,23 +212,11 @@ def load_town_minutes() -> list:
     return json.loads(TOWN_MINUTES_JSON.read_text())
 
 
-def save_town_minutes(records: list) -> None:
-    """Write the town-website minutes list to town_minutes.json."""
-    _ensure_dirs()
-    TOWN_MINUTES_JSON.write_text(json.dumps(records, indent=2))
-
-
 def load_town_meeting_files() -> list:
     """Load the cached Town Meeting Files list from town_meeting_files.json."""
     if not TOWN_MEETING_FILES_JSON.exists():
         return []
     return json.loads(TOWN_MEETING_FILES_JSON.read_text())
-
-
-def save_town_meeting_files(records: list) -> None:
-    """Write the Town Meeting Files list to town_meeting_files.json."""
-    _ensure_dirs()
-    TOWN_MEETING_FILES_JSON.write_text(json.dumps(records, indent=2))
 
 
 def load_town_admin_reports() -> list:
@@ -237,10 +226,23 @@ def load_town_admin_reports() -> list:
     return json.loads(TOWN_ADMIN_REPORTS_JSON.read_text())
 
 
-def save_town_admin_reports(records: list) -> None:
-    """Write the Town Administrator's Reports list to town_admin_reports.json."""
+def load_wpcf_updates() -> list:
+    """Load the cached WPCF Project Updates list from wpcf_updates.json."""
+    if not WPCF_UPDATES_JSON.exists():
+        return []
+    return json.loads(WPCF_UPDATES_JSON.read_text())
+
+
+def _save_json_list(json_path: Path, records: list) -> None:
+    """Write records as indented JSON to json_path, creating parent dirs first.
+
+    Shared by every sync-town target's `save` callback (see SyncTownTarget)
+    via functools.partial -- these files have no save-side logic beyond
+    "serialize the list," unlike the load side, which some callers (cli.py,
+    tests) still address by a named per-target function.
+    """
     _ensure_dirs()
-    TOWN_ADMIN_REPORTS_JSON.write_text(json.dumps(records, indent=2))
+    json_path.write_text(json.dumps(records, indent=2))
 
 
 def _dated_record_folder(subdir: str, date: str) -> Path:
@@ -320,7 +322,8 @@ def select_board_sync_target() -> SyncTownTarget:
     """Return the sync-town target for Select Board minutes (the default)."""
     return SyncTownTarget(
         label='minutes', listing_url=hardwick_town.LISTING_URL,
-        load=load_town_minutes, save=save_town_minutes, folders=_select_board_folders,
+        load=load_town_minutes, save=partial(_save_json_list, TOWN_MINUTES_JSON),
+        folders=_select_board_folders,
     )
 
 
@@ -328,7 +331,7 @@ def town_meeting_files_sync_target() -> SyncTownTarget:
     """Return the sync-town target for the Town Clerk's Town Meeting Files page."""
     return SyncTownTarget(
         label='Town Meeting Files', listing_url=hardwick_town.TOWN_MEETING_FILES_URL,
-        load=load_town_meeting_files, save=save_town_meeting_files,
+        load=load_town_meeting_files, save=partial(_save_json_list, TOWN_MEETING_FILES_JSON),
         folders=partial(_dated_folders, 'town_meeting_files'),
     )
 
@@ -337,8 +340,17 @@ def town_admin_reports_sync_target() -> SyncTownTarget:
     """Return the sync-town target for the Town Administrator's Reports page."""
     return SyncTownTarget(
         label="Town Administrator's Reports", listing_url=hardwick_town.TOWN_ADMIN_REPORTS_URL,
-        load=load_town_admin_reports, save=save_town_admin_reports,
+        load=load_town_admin_reports, save=partial(_save_json_list, TOWN_ADMIN_REPORTS_JSON),
         folders=partial(_dated_folders, 'ta_reports'),
+    )
+
+
+def wpcf_updates_sync_target() -> SyncTownTarget:
+    """Return the sync-town target for the WPCF Project Updates page."""
+    return SyncTownTarget(
+        label='WPCF Project Updates', listing_url=hardwick_town.WPCF_UPDATES_URL,
+        load=load_wpcf_updates, save=partial(_save_json_list, WPCF_UPDATES_JSON),
+        folders=partial(_dated_folders, 'wpcf_updates'),
     )
 
 

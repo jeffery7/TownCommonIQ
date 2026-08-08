@@ -48,6 +48,7 @@ def isolated_data(tmp_path, monkeypatch):
     monkeypatch.setattr(data_store, 'TOWN_MINUTES_JSON', tmp_path / 'town_minutes.json')
     monkeypatch.setattr(data_store, 'TOWN_MEETING_FILES_JSON', tmp_path / 'town_meeting_files.json')
     monkeypatch.setattr(data_store, 'TOWN_ADMIN_REPORTS_JSON', tmp_path / 'town_admin_reports.json')
+    monkeypatch.setattr(data_store, 'WPCF_UPDATES_JSON', tmp_path / 'wpcf_updates.json')
     monkeypatch.setattr(document_index, '_INDEX_JSON', tmp_path / 'index.json')
     (tmp_path / 'meetings').mkdir()
 
@@ -837,6 +838,14 @@ class TestMain:
         args = mock_sync_town.call_args[0][0]
         assert args.target == 'ta-reports'
 
+    def test_sync_town_accepts_wpcf_updates_target(self):
+        with patch.object(cli.logging_setup, 'configure_logging'), \
+             patch.object(sys, 'argv', ['prog', 'sync-town', '--target', 'wpcf-updates']), \
+             patch.object(cli, '_cmd_sync_town', return_value=0) as mock_sync_town:
+            cli.main()
+        args = mock_sync_town.call_args[0][0]
+        assert args.target == 'wpcf-updates'
+
     def test_sync_town_rejects_invalid_target(self):
         with patch.object(cli.logging_setup, 'configure_logging'), \
              patch.object(sys, 'argv', ['prog', 'sync-town', '--target', 'bogus']), \
@@ -1210,6 +1219,28 @@ class TestCmdSyncTown:
         call_folders = mock_download.call_args.args[1]
         assert call_folders == {'2026-07-27': str(data_store._dated_record_folder('ta_reports', '2026-07-27'))}
         assert mock_download.call_args.kwargs['listing_url'] == cli.hardwick_town.TOWN_ADMIN_REPORTS_URL
+
+    def test_sync_wpcf_updates_saves_records(self):
+        fresh_records = [
+            {
+                'date': '2023-10-20', 'title': 'Weekly Project Update Issued on 10/20/2023',
+                'media_id': '5001', 'media_url': 'http://town.example.com/media/5001',
+                'file_url': 'http://town.example.com/file.pdf',
+                'filename': 'file.pdf', 'downloaded': False,
+            },
+        ]
+        args = argparse.Namespace(no_headless=False, target='wpcf-updates')
+        with patch.object(cli.hardwick_town, 'fetch_minutes_list', return_value=fresh_records), \
+             patch.object(cli.hardwick_town, 'merge_cached', return_value=fresh_records), \
+             patch.object(cli.hardwick_town, 'resolve_file_urls'), \
+             patch.object(cli.hardwick_town, 'download_all', return_value=1) as mock_download:
+            result = cli._cmd_sync_town(args)
+        assert result == 0
+        saved = data_store.load_wpcf_updates()
+        assert len(saved) == 1
+        call_folders = mock_download.call_args.args[1]
+        assert call_folders == {'2023-10-20': str(data_store._dated_record_folder('wpcf_updates', '2023-10-20'))}
+        assert mock_download.call_args.kwargs['listing_url'] == cli.hardwick_town.WPCF_UPDATES_URL
 
 
 class TestCmdCompare:

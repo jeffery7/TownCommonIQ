@@ -196,13 +196,25 @@ class TestBoardHistory:
         assert 'Alice' in info['members']
 
 
+class TestSaveJsonList:
+    def test_roundtrip(self, tmp_path):
+        path = tmp_path / 'some_list.json'
+        records = [{'a': 1}]
+        data_store._save_json_list(path, records)
+        assert json.loads(path.read_text()) == records
+
+    def test_creates_parent_dirs(self, tmp_path):
+        data_store._save_json_list(tmp_path / 'some_list.json', [])
+        assert (tmp_path / 'meetings').exists()  # _ensure_dirs side effect
+
+
 class TestTownMinutes:
     def test_load_returns_empty_when_no_file(self):
         assert data_store.load_town_minutes() == []
 
     def test_roundtrip(self):
         records = [{'media_id': '8601', 'date': '2026-03-30', 'file_url': None}]
-        data_store.save_town_minutes(records)
+        data_store._save_json_list(data_store.TOWN_MINUTES_JSON, records)
         assert data_store.load_town_minutes() == records
 
 
@@ -212,7 +224,7 @@ class TestTownMeetingFiles:
 
     def test_roundtrip(self):
         records = [{'media_id': '9046', 'date': '2026-08-12', 'file_url': None}]
-        data_store.save_town_meeting_files(records)
+        data_store._save_json_list(data_store.TOWN_MEETING_FILES_JSON, records)
         assert data_store.load_town_meeting_files() == records
 
 
@@ -222,8 +234,18 @@ class TestTownAdminReports:
 
     def test_roundtrip(self):
         records = [{'media_id': '9036', 'date': '2026-07-27', 'file_url': None}]
-        data_store.save_town_admin_reports(records)
+        data_store._save_json_list(data_store.TOWN_ADMIN_REPORTS_JSON, records)
         assert data_store.load_town_admin_reports() == records
+
+
+class TestWpcfUpdates:
+    def test_load_returns_empty_when_no_file(self):
+        assert data_store.load_wpcf_updates() == []
+
+    def test_roundtrip(self):
+        records = [{'media_id': '5001', 'date': '2023-10-20', 'file_url': None}]
+        data_store._save_json_list(data_store.WPCF_UPDATES_JSON, records)
+        assert data_store.load_wpcf_updates() == records
 
 
 class TestDatedRecordFolder:
@@ -309,7 +331,7 @@ class TestSyncTownTargets:
         assert target.label == 'minutes'
         assert target.listing_url == data_store.hardwick_town.LISTING_URL
         assert target.load == data_store.load_town_minutes
-        assert target.save == data_store.save_town_minutes
+        assert (target.save.func, target.save.args) == (data_store._save_json_list, (data_store.TOWN_MINUTES_JSON,))
         assert target.folders == data_store._select_board_folders
 
     def test_town_meeting_files_target_fields(self):
@@ -317,7 +339,9 @@ class TestSyncTownTargets:
         assert target.label == 'Town Meeting Files'
         assert target.listing_url == data_store.hardwick_town.TOWN_MEETING_FILES_URL
         assert target.load == data_store.load_town_meeting_files
-        assert target.save == data_store.save_town_meeting_files
+        assert (target.save.func, target.save.args) == (
+            data_store._save_json_list, (data_store.TOWN_MEETING_FILES_JSON,),
+        )
         assert (target.folders.func, target.folders.args) == (data_store._dated_folders, ('town_meeting_files',))
 
     def test_town_admin_reports_target_fields(self):
@@ -325,8 +349,20 @@ class TestSyncTownTargets:
         assert target.label == "Town Administrator's Reports"
         assert target.listing_url == data_store.hardwick_town.TOWN_ADMIN_REPORTS_URL
         assert target.load == data_store.load_town_admin_reports
-        assert target.save == data_store.save_town_admin_reports
+        assert (target.save.func, target.save.args) == (
+            data_store._save_json_list, (data_store.TOWN_ADMIN_REPORTS_JSON,),
+        )
         assert (target.folders.func, target.folders.args) == (data_store._dated_folders, ('ta_reports',))
+
+    def test_wpcf_updates_target_fields(self):
+        target = data_store.wpcf_updates_sync_target()
+        assert target.label == 'WPCF Project Updates'
+        assert target.listing_url == data_store.hardwick_town.WPCF_UPDATES_URL
+        assert target.load == data_store.load_wpcf_updates
+        assert (target.save.func, target.save.args) == (
+            data_store._save_json_list, (data_store.WPCF_UPDATES_JSON,),
+        )
+        assert (target.folders.func, target.folders.args) == (data_store._dated_folders, ('wpcf_updates',))
 
     def test_sorted_by_date(self):
         meetings = [{'date': '2024-03-01'}, {'date': '2024-01-01'}]

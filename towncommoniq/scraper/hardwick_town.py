@@ -6,11 +6,11 @@ directly to a temp directory).  Downloaded files carry FILE_PREFIX to
 distinguish them from mytowngovernment.org files.
 
 The site's "page" templates (Select Board minutes, Town Meeting Files, Town
-Administrator's Reports, etc.) share the same layout — a list of /media/<id>
-links — so every function here takes a listing_url and defaults to
-LISTING_URL (Select Board minutes) for backward compatibility; pass
-TOWN_MEETING_FILES_URL or TOWN_ADMIN_REPORTS_URL to scrape a different
-listing on the same site instead.
+Administrator's Reports, WPCF Project Updates, etc.) share the same layout —
+a list of /media/<id> links — so every function here takes a listing_url and
+defaults to LISTING_URL (Select Board minutes) for backward compatibility;
+pass TOWN_MEETING_FILES_URL, TOWN_ADMIN_REPORTS_URL, or WPCF_UPDATES_URL to
+scrape a different listing on the same site instead.
 """
 import contextlib
 import logging
@@ -32,6 +32,7 @@ BASE_URL = 'https://www.hardwick-ma.gov'
 LISTING_URL = f'{BASE_URL}/administration/page/selectboard-meeting-minutes'
 TOWN_MEETING_FILES_URL = f'{BASE_URL}/town-clerk/page/town-meeting-files'
 TOWN_ADMIN_REPORTS_URL = f'{BASE_URL}/administration/page/town-administrators-reports'
+WPCF_UPDATES_URL = f'{BASE_URL}/public-works/page/wpcf-project-updates'
 FILE_PREFIX = 'town_'
 
 _CF_WAIT_SECS = 25

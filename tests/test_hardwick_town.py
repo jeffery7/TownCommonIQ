@@ -60,6 +60,14 @@ class TestListingUrls:
     def test_town_admin_reports_url_is_on_the_town_site(self):
         assert hardwick_town.TOWN_ADMIN_REPORTS_URL.startswith(hardwick_town.BASE_URL)
 
+    def test_wpcf_updates_url_is_distinct_from_the_others(self):
+        assert hardwick_town.WPCF_UPDATES_URL != hardwick_town.LISTING_URL
+        assert hardwick_town.WPCF_UPDATES_URL != hardwick_town.TOWN_MEETING_FILES_URL
+        assert hardwick_town.WPCF_UPDATES_URL != hardwick_town.TOWN_ADMIN_REPORTS_URL
+
+    def test_wpcf_updates_url_is_on_the_town_site(self):
+        assert hardwick_town.WPCF_UPDATES_URL.startswith(hardwick_town.BASE_URL)
+
 
 class TestParseDateFromTitle:
     def test_standard_date_with_comma(self):

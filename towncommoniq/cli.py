@@ -459,11 +459,12 @@ def _cmd_set_attendance(args: argparse.Namespace) -> int:
     return 0
 
 
-_SYNC_TOWN_TARGET_NAMES = ('minutes', 'town-meeting-files', 'ta-reports')
+_SYNC_TOWN_TARGET_NAMES = ('minutes', 'town-meeting-files', 'ta-reports', 'wpcf-updates')
 _SYNC_TOWN_TARGET_FACTORIES = (
     data_store.select_board_sync_target,
     data_store.town_meeting_files_sync_target,
     data_store.town_admin_reports_sync_target,
+    data_store.wpcf_updates_sync_target,
 )
 
 
@@ -472,10 +473,10 @@ def _cmd_sync_town(args: argparse.Namespace) -> int:
 
     --target minutes (default) syncs Select Board minutes into each
     meeting's existing folder from meetings.json. --target
-    town-meeting-files and --target ta-reports sync documents with no
-    meetings.json entry into their own per-date folder instead; titles with
-    no date parsed (e.g. "2025 Annual Town Report") are reported and skipped
-    rather than guessed at. See data_store.SyncTownTarget.
+    town-meeting-files, --target ta-reports, and --target wpcf-updates sync
+    documents with no meetings.json entry into their own per-date folder
+    instead; titles with no date parsed (e.g. "2025 Annual Town Report") are
+    reported and skipped rather than guessed at. See data_store.SyncTownTarget.
     """
     target_factories = dict(zip(_SYNC_TOWN_TARGET_NAMES, _SYNC_TOWN_TARGET_FACTORIES))
     target = target_factories[args.target]()
@@ -700,7 +701,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help=(
             "'minutes' (default) syncs Select Board minutes; "
             "'town-meeting-files' syncs Town Meeting warrants/minutes/ballot questions; "
-            "'ta-reports' syncs Town Administrator's Reports"
+            "'ta-reports' syncs Town Administrator's Reports; "
+            "'wpcf-updates' syncs WPCF Project Updates"
         ),
     )
     town_parser.add_argument(
