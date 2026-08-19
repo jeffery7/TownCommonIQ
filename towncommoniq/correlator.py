@@ -27,6 +27,8 @@ BOARD_TITLE_KEYWORDS = MappingProxyType({
     'Select Board': ('select board', 'selectmen', 'selectman'),
     'Board of Health': ('board of health',),
     'Finance Committee': ('finance committee',),
+    'Gilbertville-Wheelwright Sewer Commissioners': ('sewer commission', 'sewer commissioners'),
+    'Planning Board': ('planning board',),
 })
 _JOINT_INDICATOR = 'joint'
 
