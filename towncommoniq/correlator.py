@@ -29,6 +29,10 @@ BOARD_TITLE_KEYWORDS = MappingProxyType({
     'Finance Committee': ('finance committee',),
     'Gilbertville-Wheelwright Sewer Commissioners': ('sewer commission', 'sewer commissioners'),
     'Planning Board': ('planning board',),
+    'Conservation Commission': ('conservation commission',),
+    'Capital Planning Committee': ('capital planning',),
+    'Board of Assessors': ('board of assessors', 'assessors'),
+    'Master Plan Steering Committee': ('master plan steering', 'master plan'),
 })
 _JOINT_INDICATOR = 'joint'
 

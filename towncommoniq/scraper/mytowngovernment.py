@@ -37,6 +37,10 @@ BOARD_IDS = MappingProxyType({
     'Finance Committee': 'ahNzfnRvd25nb3Zlcm5tZW50LWhychILEgpCb2FyZE1vZGVsGOSqEQw',
     'Gilbertville-Wheelwright Sewer Commissioners': 'ahNzfnRvd25nb3Zlcm5tZW50LWhychILEgpCb2FyZE1vZGVsGMmmFQw',
     'Planning Board': 'ahNzfnRvd25nb3Zlcm5tZW50LWhychILEgpCb2FyZE1vZGVsGLnYFAw',
+    'Conservation Commission': 'ahNzfnRvd25nb3Zlcm5tZW50LWhychILEgpCb2FyZE1vZGVsGOGhFAw',
+    'Capital Planning Committee': 'ahNzfnRvd25nb3Zlcm5tZW50LWhychILEgpCb2FyZE1vZGVsGLW9cww',
+    'Board of Assessors': 'ahNzfnRvd25nb3Zlcm5tZW50LWhychILEgpCb2FyZE1vZGVsGKmHFQw',
+    'Master Plan Steering Committee': 'ahNzfnRvd25nb3Zlcm5tZW50LWhychcLEgpCb2FyZE1vZGVsGICAwLS3xtcIDA',
 })
 
 
