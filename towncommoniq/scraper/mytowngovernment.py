@@ -11,12 +11,14 @@ the meeting records so the rest of the pipeline has everything in one place.
 import contextlib
 import logging
 import re
+import time
 from datetime import datetime
 from types import MappingProxyType
 from typing import Optional
 
-import requests
 from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.common import exceptions as selenium_exceptions
 
 _logger = logging.getLogger(__name__)
 
@@ -56,14 +58,8 @@ def board_url(board: str) -> str:
     return f'{BASE_URL}/board?board={BOARD_IDS[board]}'
 
 
-_HEADERS = MappingProxyType({
-    'User-Agent': (
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
-        '(KHTML, like Gecko) Chrome/124.0 Safari/537.36'
-    ),
-})
-
-_REQUEST_TIMEOUT = 30
+_CF_WAIT_SECS = 25
+_POLL_INTERVAL = 0.5
 _DATE_FORMATS = ('%b %d, %Y', '%B %d, %Y', '%B %d %Y', '%m/%d/%Y')
 # Matches the 'Agenda:' label cell on individual meeting pages (allows whitespace)
 _AGENDA_LABEL_RE = re.compile(r'^\s*Agenda:\s*$')
@@ -257,24 +253,51 @@ def _parse_docs_table(table) -> dict[str, dict]:
     return date_docs
 
 
-def _do_request(url: str):
-    """Perform a GET request with the configured timeout and browser User-Agent.
+def _create_driver(headless: bool = True) -> webdriver.Firefox:
+    """Return a configured headless-capable Firefox WebDriver instance."""
+    opts = webdriver.FirefoxOptions()
+    if headless:
+        opts.add_argument('--headless')
+    return webdriver.Firefox(options=opts)
 
-    Raises requests.HTTPError if the server returns a 4xx or 5xx status.
+
+def _wait_past_cloudflare(driver: webdriver.Firefox, timeout: int = _CF_WAIT_SECS) -> None:
+    """Block until the Cloudflare challenge resolves or raise TimeoutException."""
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if 'Just a moment' not in driver.title:
+            return
+        time.sleep(_POLL_INTERVAL)
+    raise selenium_exceptions.TimeoutException('Cloudflare challenge did not resolve in time')
+
+
+def _do_request(url: str) -> str:
+    """Fetch a URL through a headless Firefox session and return its HTML.
+
+    mytowngovernment.org now issues a Cloudflare "Just a moment..." JS
+    challenge to plain HTTP clients, so this loads the page in a real
+    browser engine and waits for the challenge to clear before reading the
+    rendered page source. Raises selenium.common.exceptions.TimeoutException
+    if the challenge does not resolve within _CF_WAIT_SECS, or
+    WebDriverException on other browser/driver failures — callers that need
+    a failed fetch to be non-fatal should go through _fetch_soup instead.
     """
-    response = requests.get(url, timeout=_REQUEST_TIMEOUT, headers=_HEADERS)
-    response.raise_for_status()
-    return response
+    with _create_driver() as driver:
+        driver.get(url)
+        _wait_past_cloudflare(driver)
+        time.sleep(_POLL_INTERVAL)
+        return driver.page_source
 
 
 def _fetch_soup(url: str) -> Optional[BeautifulSoup]:
     """Fetch a URL and parse it into a BeautifulSoup tree; return None on any error.
 
-    Silently swallows all exceptions so callers can treat a failed fetch as
-    'no content available' rather than crashing the whole pipeline.
+    Silently swallows all exceptions (including Selenium/Cloudflare failures
+    from _do_request) so callers can treat a failed fetch as 'no content
+    available' rather than crashing the whole pipeline.
     """
     try:
-        return BeautifulSoup(_do_request(url).text, 'html.parser')
+        return BeautifulSoup(_do_request(url), 'html.parser')
     except Exception:
         _logger.warning('Failed to fetch %s', url, exc_info=True)
         return None
@@ -473,10 +496,13 @@ def fetch_meetings(url: str = BOARD_URL) -> tuple[list[dict], dict]:
 
     Returns (meetings, board_info). Uses the Past table as the primary source.
     Supplements with minutes/agenda download URLs from the Docs table.
+
+    Unlike _fetch_soup, does not swallow fetch failures — calls _do_request
+    directly so a Selenium/Cloudflare failure here (e.g. TimeoutException)
+    propagates to the caller instead of being silently treated as zero
+    meetings, since a failed board-listing fetch should stop the sync.
     """
-    response = requests.get(url, timeout=_REQUEST_TIMEOUT, headers=_HEADERS)
-    response.raise_for_status()
-    soup = BeautifulSoup(response.text, 'html.parser')
+    soup = BeautifulSoup(_do_request(url), 'html.parser')
     meetings: list[dict] = []
 
     upcoming_anchor = soup.find(_TAG_A, attrs={'name': 'Upcoming'})

@@ -141,7 +141,9 @@ Whenever possible, prefer the YouTube transcript over generating locally with Wh
 ```
 towncommoniq/
 ├── scraper/
-│   ├── mytowngovernment.py   # requests + BeautifulSoup → list of meeting dicts
+│   ├── mytowngovernment.py   # Selenium/Firefox + BeautifulSoup → list of meeting dicts
+│   │                         #   (Cloudflare-bypass added 2026-09-14; site's bot-management
+│   │                         #   still blocks it live -- see CLAUDE.md's "Known gotchas")
 │   └── youtube.py            # yt-dlp (metadata-only) → list of video dicts
 ├── data_store.py             # read/write data/<town>/*.json and per-meeting
 │                             #   folders under data/<town>/meetings/ (Select

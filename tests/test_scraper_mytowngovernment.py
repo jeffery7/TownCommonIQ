@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from selenium.common import exceptions as selenium_exceptions
 
 from towncommoniq.scraper import mytowngovernment
 
@@ -61,12 +62,19 @@ MEETING_PAGE_HTML = """
 """
 
 
+def _make_driver_ctx(html: str) -> MagicMock:
+    """Build a mock mimicking `with _create_driver() as driver`, with driver.page_source=html."""
+    driver = MagicMock()
+    driver.page_source = html
+    cm = MagicMock()
+    cm.__enter__ = MagicMock(return_value=driver)
+    cm.__exit__ = MagicMock(return_value=False)
+    return cm
+
+
 @pytest.fixture()
-def mock_response():
-    resp = MagicMock()
-    resp.text = SAMPLE_HTML
-    resp.raise_for_status = MagicMock()
-    return resp
+def driver_ctx():
+    return _make_driver_ctx(SAMPLE_HTML)
 
 
 BOARD_HTML = """
@@ -345,12 +353,85 @@ class TestParseDate:
         assert mytowngovernment._parse_date('') is None
 
 
+class TestCreateDriver:
+    def test_headless_adds_argument(self):
+        with patch('towncommoniq.scraper.mytowngovernment.webdriver.Firefox'), \
+             patch('towncommoniq.scraper.mytowngovernment.webdriver.FirefoxOptions') as mock_cls:
+            mock_opts = MagicMock()
+            mock_cls.return_value = mock_opts
+            mytowngovernment._create_driver(headless=True)
+        mock_opts.add_argument.assert_called_once_with('--headless')
+
+    def test_non_headless_skips_argument(self):
+        with patch('towncommoniq.scraper.mytowngovernment.webdriver.Firefox'), \
+             patch('towncommoniq.scraper.mytowngovernment.webdriver.FirefoxOptions') as mock_cls:
+            mock_opts = MagicMock()
+            mock_cls.return_value = mock_opts
+            mytowngovernment._create_driver(headless=False)
+        mock_opts.add_argument.assert_not_called()
+
+
+class TestWaitPastCloudflare:
+    def test_returns_immediately_when_no_challenge(self):
+        driver = MagicMock()
+        driver.title = 'Hardwick, MA Select Board'
+        mytowngovernment._wait_past_cloudflare(driver, timeout=1)
+
+    def test_raises_timeout_when_challenge_never_clears(self):
+        driver = MagicMock()
+        driver.title = 'Just a moment...'
+        with pytest.raises(selenium_exceptions.TimeoutException):
+            mytowngovernment._wait_past_cloudflare(driver, timeout=0)
+
+    def test_sleeps_while_cf_title_active(self):
+        driver = MagicMock()
+        driver.title = 'Just a moment...'
+        calls = iter([0, 0, 100])
+        with patch.object(mytowngovernment, 'time') as mock_time:
+            mock_time.monotonic = lambda: next(calls)
+            mock_time.sleep = MagicMock()
+            with pytest.raises(selenium_exceptions.TimeoutException):
+                mytowngovernment._wait_past_cloudflare(driver, timeout=1)
+        mock_time.sleep.assert_called_once()
+
+
+class TestDoRequest:
+    def test_returns_page_source(self):
+        ctx = _make_driver_ctx('<html>hi</html>')
+        with patch.object(mytowngovernment, '_create_driver', return_value=ctx), \
+             patch.object(mytowngovernment, '_wait_past_cloudflare'), \
+             patch('towncommoniq.scraper.mytowngovernment.time.sleep'):
+            assert mytowngovernment._do_request('http://x.com') == '<html>hi</html>'
+
+    def test_propagates_cloudflare_timeout(self):
+        ctx = _make_driver_ctx('')
+        cf_timeout = selenium_exceptions.TimeoutException('nope')
+        with patch.object(mytowngovernment, '_create_driver', return_value=ctx), \
+             patch.object(mytowngovernment, '_wait_past_cloudflare', side_effect=cf_timeout), \
+             pytest.raises(selenium_exceptions.TimeoutException):
+            mytowngovernment._do_request('http://x.com')
+
+
+class TestFetchSoupSelenium:
+    def test_returns_soup_on_success(self):
+        ctx = _make_driver_ctx('<p>ok</p>')
+        with patch.object(mytowngovernment, '_create_driver', return_value=ctx), \
+             patch.object(mytowngovernment, '_wait_past_cloudflare'), \
+             patch('towncommoniq.scraper.mytowngovernment.time.sleep'):
+            soup = mytowngovernment._fetch_soup('http://x.com')
+        assert soup.find('p').get_text() == 'ok'
+
+    def test_returns_none_on_error(self):
+        with patch.object(mytowngovernment, '_create_driver', side_effect=Exception('boom')):
+            assert mytowngovernment._fetch_soup('http://x.com') is None
+
+
 class TestFetchAgendaText:
     def test_extracts_agenda_from_meeting_page(self):
-        mock_resp = MagicMock()
-        mock_resp.text = MEETING_PAGE_HTML
-        mock_resp.raise_for_status = MagicMock()
-        with patch('requests.get', return_value=mock_resp):
+        ctx = _make_driver_ctx(MEETING_PAGE_HTML)
+        with patch.object(mytowngovernment, '_create_driver', return_value=ctx), \
+             patch.object(mytowngovernment, '_wait_past_cloudflare'), \
+             patch('towncommoniq.scraper.mytowngovernment.time.sleep'):
             text = mytowngovernment.fetch_agenda_text('http://example.com/meeting?meeting=abc')
         assert 'Call to Order' in text
         assert 'Executive Session' in text
@@ -364,86 +445,104 @@ class TestFetchAgendaText:
             '<td class="agendaTD"><pre>1. Call to Order\n2. Adjournment</pre></td></tr>'
             '</table></body></html>'
         )
-        mock_resp = MagicMock()
-        mock_resp.text = html
-        mock_resp.raise_for_status = MagicMock()
-        with patch('requests.get', return_value=mock_resp):
+        ctx = _make_driver_ctx(html)
+        with patch.object(mytowngovernment, '_create_driver', return_value=ctx), \
+             patch.object(mytowngovernment, '_wait_past_cloudflare'), \
+             patch('towncommoniq.scraper.mytowngovernment.time.sleep'):
             text = mytowngovernment.fetch_agenda_text('http://example.com/meeting?meeting=abc')
         assert 'Call to Order' in text
         assert 'Adjournment' in text
 
     def test_returns_empty_when_no_agenda_td(self):
-        mock_resp = MagicMock()
-        mock_resp.text = '<html><body><p>No agenda here</p></body></html>'
-        mock_resp.raise_for_status = MagicMock()
-        with patch('requests.get', return_value=mock_resp):
+        ctx = _make_driver_ctx('<html><body><p>No agenda here</p></body></html>')
+        with patch.object(mytowngovernment, '_create_driver', return_value=ctx), \
+             patch.object(mytowngovernment, '_wait_past_cloudflare'), \
+             patch('towncommoniq.scraper.mytowngovernment.time.sleep'):
             text = mytowngovernment.fetch_agenda_text('http://example.com/meeting?meeting=abc')
         assert text == ''
 
     def test_returns_empty_on_request_error(self):
-        with patch('requests.get', side_effect=Exception('timeout')):
+        with patch.object(mytowngovernment, '_create_driver', side_effect=Exception('timeout')):
             text = mytowngovernment.fetch_agenda_text('http://example.com/meeting?meeting=abc')
         assert text == ''
 
     def test_returns_empty_when_no_sibling_td(self):
-        mock_resp = MagicMock()
-        mock_resp.text = '<html><body><table><tr><td>Agenda:</td></tr></table></body></html>'
-        mock_resp.raise_for_status = MagicMock()
-        with patch('requests.get', return_value=mock_resp):
+        ctx = _make_driver_ctx('<html><body><table><tr><td>Agenda:</td></tr></table></body></html>')
+        with patch.object(mytowngovernment, '_create_driver', return_value=ctx), \
+             patch.object(mytowngovernment, '_wait_past_cloudflare'), \
+             patch('towncommoniq.scraper.mytowngovernment.time.sleep'):
             text = mytowngovernment.fetch_agenda_text('http://example.com/meeting?meeting=abc')
         assert text == ''
 
 
 class TestFetchMeetings:
-    def test_returns_tuple(self, mock_response):
-        with patch('requests.get', return_value=mock_response):
+    def test_returns_tuple(self, driver_ctx):
+        with patch.object(mytowngovernment, '_create_driver', return_value=driver_ctx), \
+             patch.object(mytowngovernment, '_wait_past_cloudflare'), \
+             patch('towncommoniq.scraper.mytowngovernment.time.sleep'):
             result = mytowngovernment.fetch_meetings()
         assert isinstance(result, tuple) and len(result) == 2
 
-    def test_returns_meetings(self, mock_response):
-        with patch('requests.get', return_value=mock_response):
+    def test_returns_meetings(self, driver_ctx):
+        with patch.object(mytowngovernment, '_create_driver', return_value=driver_ctx), \
+             patch.object(mytowngovernment, '_wait_past_cloudflare'), \
+             patch('towncommoniq.scraper.mytowngovernment.time.sleep'):
             meetings, _ = mytowngovernment.fetch_meetings()
         assert len(meetings) >= 1
 
-    def test_parses_past_dates(self, mock_response):
-        with patch('requests.get', return_value=mock_response):
+    def test_parses_past_dates(self, driver_ctx):
+        with patch.object(mytowngovernment, '_create_driver', return_value=driver_ctx), \
+             patch.object(mytowngovernment, '_wait_past_cloudflare'), \
+             patch('towncommoniq.scraper.mytowngovernment.time.sleep'):
             meetings, _ = mytowngovernment.fetch_meetings()
         dates = [m['date'] for m in meetings]
         assert '2024-03-15' in dates
 
-    def test_captures_meeting_url(self, mock_response):
-        with patch('requests.get', return_value=mock_response):
+    def test_captures_meeting_url(self, driver_ctx):
+        with patch.object(mytowngovernment, '_create_driver', return_value=driver_ctx), \
+             patch.object(mytowngovernment, '_wait_past_cloudflare'), \
+             patch('towncommoniq.scraper.mytowngovernment.time.sleep'):
             meetings, _ = mytowngovernment.fetch_meetings()
         meeting = next(m for m in meetings if m['date'] == '2024-03-15')
         assert meeting['meeting_url'] is not None
         assert '/meeting?' in meeting['meeting_url']
 
-    def test_past_meeting_has_held_status(self, mock_response):
-        with patch('requests.get', return_value=mock_response):
+    def test_past_meeting_has_held_status(self, driver_ctx):
+        with patch.object(mytowngovernment, '_create_driver', return_value=driver_ctx), \
+             patch.object(mytowngovernment, '_wait_past_cloudflare'), \
+             patch('towncommoniq.scraper.mytowngovernment.time.sleep'):
             meetings, _ = mytowngovernment.fetch_meetings()
         meeting = next(m for m in meetings if m['date'] == '2024-03-15')
         assert meeting['status'] == 'held'
 
-    def test_upcoming_meeting_has_upcoming_status(self, mock_response):
-        with patch('requests.get', return_value=mock_response):
+    def test_upcoming_meeting_has_upcoming_status(self, driver_ctx):
+        with patch.object(mytowngovernment, '_create_driver', return_value=driver_ctx), \
+             patch.object(mytowngovernment, '_wait_past_cloudflare'), \
+             patch('towncommoniq.scraper.mytowngovernment.time.sleep'):
             meetings, _ = mytowngovernment.fetch_meetings()
         meeting = next(m for m in meetings if m['date'] == '2024-05-01')
         assert meeting['status'] == 'upcoming'
 
-    def test_docs_table_supplements_minutes_url(self, mock_response):
-        with patch('requests.get', return_value=mock_response):
+    def test_docs_table_supplements_minutes_url(self, driver_ctx):
+        with patch.object(mytowngovernment, '_create_driver', return_value=driver_ctx), \
+             patch.object(mytowngovernment, '_wait_past_cloudflare'), \
+             patch('towncommoniq.scraper.mytowngovernment.time.sleep'):
             meetings, _ = mytowngovernment.fetch_meetings()
         meeting = next(m for m in meetings if m['date'] == '2024-03-15')
         assert meeting['minutes_url'] is not None
 
-    def test_docs_table_supplements_agenda_url(self, mock_response):
-        with patch('requests.get', return_value=mock_response):
+    def test_docs_table_supplements_agenda_url(self, driver_ctx):
+        with patch.object(mytowngovernment, '_create_driver', return_value=driver_ctx), \
+             patch.object(mytowngovernment, '_wait_past_cloudflare'), \
+             patch('towncommoniq.scraper.mytowngovernment.time.sleep'):
             meetings, _ = mytowngovernment.fetch_meetings()
         meeting = next(m for m in meetings if m['date'] == '2024-03-15')
         assert meeting['agenda_url'] is not None
 
-    def test_meeting_without_docs_has_none_urls(self, mock_response):
-        with patch('requests.get', return_value=mock_response):
+    def test_meeting_without_docs_has_none_urls(self, driver_ctx):
+        with patch.object(mytowngovernment, '_create_driver', return_value=driver_ctx), \
+             patch.object(mytowngovernment, '_wait_past_cloudflare'), \
+             patch('towncommoniq.scraper.mytowngovernment.time.sleep'):
             meetings, _ = mytowngovernment.fetch_meetings()
         meeting = next(m for m in meetings if m['date'] == '2024-04-10')
         assert meeting['minutes_url'] is None
@@ -463,10 +562,10 @@ class TestFetchMeetings:
         <a name="Docs"></a>
         </body></html>
         """
-        resp = MagicMock()
-        resp.text = html
-        resp.raise_for_status = MagicMock()
-        with patch('requests.get', return_value=resp):
+        ctx = _make_driver_ctx(html)
+        with patch.object(mytowngovernment, '_create_driver', return_value=ctx), \
+             patch.object(mytowngovernment, '_wait_past_cloudflare'), \
+             patch('towncommoniq.scraper.mytowngovernment.time.sleep'):
             meetings, _ = mytowngovernment.fetch_meetings()
         assert meetings[0]['minutes_url'] is None
 
@@ -491,12 +590,18 @@ class TestFetchMeetings:
         </table>
         </body></html>
         """
-        resp = MagicMock()
-        resp.text = html
-        resp.raise_for_status = MagicMock()
-        with patch('requests.get', return_value=resp):
+        ctx = _make_driver_ctx(html)
+        with patch.object(mytowngovernment, '_create_driver', return_value=ctx), \
+             patch.object(mytowngovernment, '_wait_past_cloudflare'), \
+             patch('towncommoniq.scraper.mytowngovernment.time.sleep'):
             meetings, _ = mytowngovernment.fetch_meetings()
         assert meetings[0]['minutes_url'] is None
+
+    def test_fetch_errors_propagate_unlike_fetch_soup(self):
+        """fetch_meetings must NOT swallow fetch failures, unlike _fetch_soup."""
+        with patch.object(mytowngovernment, '_do_request', side_effect=Exception('boom')):
+            with pytest.raises(Exception, match='boom'):
+                mytowngovernment.fetch_meetings()
 
 
 class TestScrapeLabelValue:
